@@ -1,0 +1,419 @@
+/*
+ * Tokens.
+ *
+ * A blank surface, one accent, and a small ladder of elevations. Nothing here
+ * is a texture: the page's character comes from a wallpaper the user brings,
+ * and from the way plates are placed, sized and named on top of it.
+ *
+ * Two interface tones exist because a wallpaper can be any picture at all —
+ * one set of chrome cannot stay legible over both a white page and a night
+ * photograph. Everything that sits directly on the wallpaper reads from the
+ * `--on-wall` pair; everything that sits on a card reads from the ink pair.
+ */
+
+@font-face {
+  font-family: 'Archivo';
+  src: url('../assets/fonts/archivo-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+2000-206F, U+2074, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215;
+}
+
+@font-face {
+  font-family: 'Archivo';
+  src: url('../assets/fonts/archivo-latin-ext-wght-normal.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0;
+}
+
+:root {
+  --font-ui: 'Archivo', 'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', 'Source Han Sans SC',
+    system-ui, sans-serif;
+  --font-data: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
+
+  /* Adjustable from settings at runtime. */
+  --radius: 20px;
+  --wall-margin: 4vw;
+
+  --ease: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --motion: 1;
+
+  /* Replaced by the [data-wall] block once the board knows what is behind it. */
+  --label-shadow: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Light                                                               */
+/* ------------------------------------------------------------------ */
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --surface: #fafafa;
+  --accent: #d9491f;
+  --accent-ink: #ffffff;
+
+  /* On a card, a panel or a menu. */
+  --ink: #1b1d20;
+  --ink-soft: #5a5f66;
+  --ink-faint: #8c9198;
+
+  --card: #ffffff;
+  --card-soft: #f7f7f8;
+  --card-rim: rgba(18, 20, 24, 0.09);
+  --card-sheen: rgba(255, 255, 255, 0.8);
+
+  --panel: #ffffff;
+  --panel-rim: rgba(18, 20, 24, 0.1);
+  --scrim: rgba(20, 22, 26, 0.32);
+
+  --well: rgba(18, 20, 24, 0.05);
+
+  /* Directly on the wallpaper, when the wallpaper is flat or absent. */
+  --on-wall: #1b1d20;
+  --on-wall-soft: rgba(27, 29, 32, 0.58);
+  --on-wall-chip: rgba(18, 20, 24, 0.06);
+  --on-wall-chip-hover: rgba(18, 20, 24, 0.11);
+  --on-wall-rim: rgba(18, 20, 24, 0.12);
+  --on-wall-shadow: 0 6px 18px rgba(18, 20, 24, 0.1);
+
+  --grid-line: rgba(18, 20, 24, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(16, 18, 22, 0.07), 0 2px 6px rgba(16, 18, 22, 0.06);
+  --shadow-2: 0 2px 4px rgba(16, 18, 22, 0.08), 0 8px 20px rgba(16, 18, 22, 0.1);
+  --shadow-3: 0 10px 24px rgba(16, 18, 22, 0.18), 0 3px 8px rgba(16, 18, 22, 0.12);
+  --shadow-pop: 0 18px 44px rgba(16, 18, 22, 0.22);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark                                                                */
+/* ------------------------------------------------------------------ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface: #111316;
+  --accent: #ff6a3d;
+  --accent-ink: #1a0d06;
+
+  --ink: #eceef1;
+  --ink-soft: #a3a9b2;
+  --ink-faint: #737a84;
+
+  --card: #1c1f24;
+  --card-soft: #23262c;
+  --card-rim: rgba(255, 255, 255, 0.09);
+  --card-sheen: rgba(255, 255, 255, 0.07);
+
+  --panel: #1a1d21;
+  --panel-rim: rgba(255, 255, 255, 0.1);
+  --scrim: rgba(0, 0, 0, 0.5);
+
+  --well: rgba(255, 255, 255, 0.06);
+
+  --on-wall: #f4f6f8;
+  --on-wall-soft: rgba(244, 246, 248, 0.62);
+  --on-wall-chip: rgba(12, 14, 18, 0.5);
+  --on-wall-chip-hover: rgba(12, 14, 18, 0.74);
+  --on-wall-rim: rgba(255, 255, 255, 0.14);
+  --on-wall-shadow: 0 6px 18px rgba(0, 0, 0, 0.34);
+
+  --grid-line: rgba(255, 255, 255, 0.2);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 10px 24px rgba(0, 0, 0, 0.55), 0 3px 8px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+
+/*
+ * What sits directly on the wallpaper.
+ *
+ * The theme says nothing useful about this: a wallpaper can be a white page, a
+ * near-black preset, or any photograph at all. So the wall itself declares how
+ * dark it is, and the marks on it follow — dark ink on a pale wall, white with
+ * a shadow on a dark one. The theme keeps control of everything on a card,
+ * where the background is known.
+ */
+:root[data-wall='light'] {
+  --on-wall: #1b1d20;
+  --on-wall-soft: rgba(27, 29, 32, 0.58);
+  --on-wall-chip: rgba(18, 20, 24, 0.06);
+  --on-wall-chip-hover: rgba(18, 20, 24, 0.11);
+  --on-wall-rim: rgba(18, 20, 24, 0.12);
+  --grid-line: rgba(18, 20, 24, 0.16);
+  --label-shadow: none;
+}
+
+:root[data-wall='dark'] {
+  --on-wall: #f4f6f8;
+  --on-wall-soft: rgba(244, 246, 248, 0.66);
+  --on-wall-chip: rgba(12, 14, 18, 0.5);
+  --on-wall-chip-hover: rgba(12, 14, 18, 0.74);
+  --on-wall-rim: rgba(255, 255, 255, 0.14);
+  --grid-line: rgba(255, 255, 255, 0.22);
+  --label-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-wall='photo'] {
+  --on-wall: #ffffff;
+  --on-wall-soft: rgba(255, 255, 255, 0.78);
+  --on-wall-chip: rgba(12, 14, 18, 0.46);
+  --on-wall-chip-hover: rgba(12, 14, 18, 0.68);
+  --on-wall-rim: rgba(255, 255, 255, 0.2);
+  --grid-line: rgba(255, 255, 255, 0.26);
+  --label-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+/*
+ * The two places ink can be standing.
+ *
+ * `--on-wall` above is ink over the user's own wallpaper. `--on-card` is the
+ * same idea for ink over a known surface — the card a tile is, a menu, the
+ * drawer — where the tone is the theme's to guarantee. Everything drawn on a
+ * card reads these rather than the theme's own, because a material may hand a
+ * tile's ink over to the wall, and the chrome that happens to sit inside that
+ * tile is still drawn on a card of its own.
+ */
+:root {
+  --on-card: var(--ink);
+  --on-card-soft: var(--ink-soft);
+  --on-card-faint: var(--ink-faint);
+  --on-card-well: var(--well);
+}
+
+/*
+ * And a third place, which is not the theme's to know: a ground the user picked.
+ *
+ * A colour out of a picker is not a card. It can be nearly black in the light
+ * theme or nearly white in the dark one, so no ink can be read off the theme and
+ * be right on it — the only thing that can be asked is the colour itself. The
+ * plate weighs the ground it was given and says which way it leans; these are
+ * the two inks it can be handed, and they do not move with the theme, because
+ * the ground they are for does not either. The cast is part of the pair: a
+ * shadow under dark ink on a pale ground is a smudge, and light ink on a dark
+ * ground is the one case where type on a tile wants one.
+ */
+:root {
+  --ink-on-light: #1b1d20;
+  --ink-on-light-soft: rgb(27 29 32 / 0.74);
+  --ink-on-light-faint: rgb(27 29 32 / 0.52);
+  --ink-on-light-cast: none;
+  --ink-on-dark: #f4f6f8;
+  --ink-on-dark-soft: rgb(244 246 248 / 0.74);
+  --ink-on-dark-faint: rgb(244 246 248 / 0.54);
+  --ink-on-dark-cast: 0 1px 3px rgb(0 0 0 / 0.5);
+}
+
+/* ------------------------------------------------------------------ */
+/* Materials                                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A tile is a plate, and a plate can be made of something.
+ *
+ * Two materials let the wallpaper keep showing through, which is the whole point
+ * of asking for them, and each has to answer three questions rather than one:
+ * what its ground is worth, what its edge does with the light, and how it sits on
+ * the wall. The ground's *amount* is not here: it is a number the user set and the
+ * performance stop scaled, so the board writes it on the root element as
+ * `--bg-acrylic-mix` and `--mark-acrylic-mix` — one set per layer, since a tile is
+ * a background and an icon and each is made of something — and these rules spend
+ * it. Everything else — the shape of the sheen, the colour of the cut, the
+ * two-step cast — is the material's own and belongs to the material.
+ *
+ * The light falls from above throughout, which is what every offset in this file
+ * already says: `inset` highlights at the top and left, shade at the bottom and
+ * right, cast shadows straight down.
+ *
+ * The grain is a real, small, tiled raster — noise, not a gradient — because the
+ * thing that gives ground glass away as a picture of glass is that its surface is
+ * perfectly smooth. It is blended over the pane's own ground, so one texture
+ * serves a lit pane and a dark one.
+ */
+:root,
+:root[data-theme='light'] {
+  /*
+   * Clear acrylic: the wall stays, richer and sharper.
+   *
+   * Its signature is the *cut* rather than the fog — a polished edge catching the
+   * light along the top and the left, shade gathering along the bottom and the
+   * right where the sheet turns away, and a highlight raked across the face from
+   * the corner the light comes from. The rake is a band with a hard start and a
+   * long fall, because that is what a reflection in a sheet looks like: a film
+   * that is merely brighter at the top than at the bottom is a gradient, and the
+   * wall behind it is being graded by it rather than seen through it.
+   */
+  --acrylic-cut: rgba(255, 255, 255, 0.72);
+  --acrylic-shade: rgba(9, 11, 15, 0.18);
+  --acrylic-rim: rgba(255, 255, 255, 0.42);
+  --acrylic-sheen: linear-gradient(
+    146deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.07) 18%,
+    rgba(255, 255, 255, 0) 44%,
+    rgba(255, 255, 255, 0.06) 76%,
+    rgba(255, 255, 255, 0.15) 100%
+  );
+  --acrylic-cast: 0 1px 1px rgba(16, 18, 22, 0.16), 0 10px 24px rgba(16, 18, 22, 0.18);
+
+  /*
+   * Ground glass: the wall stays, dissolved.
+   *
+   * Almost all of what makes this read as glass rather than as a milky card is
+   * done by the diffusion behind it, so the pane itself is left thin: a film that
+   * thins downward, light gathered on all four edges, and — the one thing a clear
+   * sheet does not do — the bottom edge glowing, because the thickness carries the
+   * light along it and lets it out at the far side. A pane whose film is thick
+   * enough to hide the wall has stopped being ground glass and become the card it
+   * was asked not to be; what the strength is for is the diffusion.
+   */
+  --glass-top: rgba(255, 255, 255, 0.6);
+  --glass-rim: rgba(255, 255, 255, 0.38);
+  --glass-floor: rgba(255, 255, 255, 0.34);
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.03) 40%,
+    rgba(255, 255, 255, 0) 68%
+  );
+  --glass-cast: 0 1px 2px rgba(16, 18, 22, 0.1), 0 14px 34px rgba(16, 18, 22, 0.16);
+
+  /*
+   * Liquid glass: the sheet that is lit.
+   *
+   * Its signature is the catch — one bright place on the face, where a light lands
+   * on something that is neither flat nor still — and a rim that gathers the light
+   * along the side it comes from and goes dark where the sheet turns away, which is
+   * what a rolled edge does. The body keeps a little colour at the far end: real
+   * glass bends the spectrum where it is thickest, and the eye reads that as depth
+   * rather than as a tint, so the one cool note in the material is at the edge
+   * furthest from the light.
+   */
+  --liquid-catch: rgba(255, 255, 255, 0.62);
+  --liquid-rim: rgba(255, 255, 255, 0.5);
+  --liquid-body: linear-gradient(
+    152deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.05) 30%,
+    rgba(255, 255, 255, 0.02) 62%,
+    rgba(206, 228, 255, 0.18) 100%
+  );
+  --liquid-cast: 0 2px 3px rgba(16, 18, 22, 0.12), 0 16px 38px rgba(16, 18, 22, 0.2);
+
+  /* The wall's own tone, which is a grade over the whole picture rather than a
+     pane standing on it. */
+  --wall-acrylic-ink: saturate(1.16) brightness(0.98);
+  --wall-frost-ink: saturate(0.92) brightness(1.02);
+}
+
+:root[data-theme='dark'] {
+  --acrylic-cut: rgba(255, 255, 255, 0.46);
+  --acrylic-shade: rgba(0, 0, 0, 0.32);
+  --acrylic-rim: rgba(255, 255, 255, 0.22);
+  --acrylic-sheen: linear-gradient(
+    146deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.04) 18%,
+    rgba(255, 255, 255, 0) 44%,
+    rgba(255, 255, 255, 0.03) 76%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  --acrylic-cast: 0 1px 1px rgba(0, 0, 0, 0.5), 0 10px 24px rgba(0, 0, 0, 0.42);
+
+  --glass-top: rgba(255, 255, 255, 0.18);
+  --glass-rim: rgba(255, 255, 255, 0.14);
+  --glass-floor: rgba(255, 255, 255, 0.12);
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.02) 40%,
+    rgba(255, 255, 255, 0) 68%
+  );
+  --glass-cast: 0 1px 2px rgba(0, 0, 0, 0.42), 0 14px 34px rgba(0, 0, 0, 0.46);
+
+  --liquid-catch: rgba(255, 255, 255, 0.4);
+  --liquid-rim: rgba(255, 255, 255, 0.3);
+  --liquid-body: linear-gradient(
+    152deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.03) 30%,
+    rgba(255, 255, 255, 0.01) 62%,
+    rgba(180, 208, 255, 0.12) 100%
+  );
+  --liquid-cast: 0 2px 4px rgba(0, 0, 0, 0.5), 0 18px 40px rgba(0, 0, 0, 0.5);
+
+  --wall-acrylic-ink: saturate(1.18) brightness(1.02);
+  --wall-frost-ink: saturate(0.94) brightness(1.04);
+}
+
+/*
+ * And the same three materials asked of the wallpaper.
+ *
+ * The wall is a picture at the size of the window, so the numbers are not the
+ * pane's: a film that on a 76px tile is a sheet of glass is invisible across a
+ * whole screen, and the amounts are the user's own (`--wall-acrylic-mix`,
+ * `--wall-frost-mix`, `--wall-diffuse`), written on the root by the board.
+ */
+:root {
+  --wall-acrylic-wash: linear-gradient(
+    color-mix(in srgb, var(--card) var(--wall-acrylic-mix, 12%), transparent),
+    color-mix(in srgb, var(--card) var(--wall-acrylic-mix, 12%), transparent)
+  );
+  --wall-frost-wash: linear-gradient(
+    color-mix(in srgb, var(--card) var(--wall-frost-mix, 46%), transparent),
+    color-mix(in srgb, var(--card) var(--wall-frost-mix, 46%), transparent)
+  );
+  /* The frost's own light: a film that thins downward over the whole window. */
+  --wall-frost-sheen: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card) 22%, transparent),
+    transparent 46%
+  );
+  /*
+   * And liquid glass over the whole window.
+   *
+   * A window-sized sheet of this stuff is not a pane of it magnified: what shows
+   * at that size is the catch, so the wall keeps one broad sheen where the light
+   * lands and a thin rim of light along the top edge, and nothing else. The bend
+   * the material is named for is left to the panes — a refraction pass across a
+   * whole screen is a second reading of the entire wallpaper for every frame, and
+   * the thing it buys at that size is a wobble nobody asked for.
+   */
+  --wall-liquid-wash: linear-gradient(
+    color-mix(in srgb, var(--card) var(--wall-liquid-mix, 26%), transparent),
+    color-mix(in srgb, var(--card) var(--wall-liquid-mix, 26%), transparent)
+  );
+  --wall-liquid-sheen: radial-gradient(
+      120% 78% at calc(50% + var(--light-dx, 0) * 32%) calc(4% + var(--light-dy, 0) * 20%),
+      color-mix(in srgb, var(--card) 26%, transparent) 0%,
+      transparent 58%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 16%, transparent), transparent 11%);
+  /* The ground glass itself, ground fine enough to read as a surface and not
+     as a pattern. Blended over the pane, so it serves a lit pane and a dark
+     one from the same raster. */
+  --glass-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.22'/%3E%3C/svg%3E");
+}
+
+:root {
+  /* A colour of the user's own, laid over the picture rather than replacing it. */
+  --wall-tint-wash: linear-gradient(
+    color-mix(in srgb, var(--wall-tint, transparent) 46%, transparent),
+    color-mix(in srgb, var(--wall-tint, transparent) 46%, transparent)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    /* `!important` because the board writes `--motion` on the root element from
+       the performance setting, and an inline style would otherwise outrank a
+       stylesheet that is trying to answer for the reader's own request. */
+    --motion: 0 !important;
+  }
+}

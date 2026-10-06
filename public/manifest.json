@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Tabula",
+  "version": "0.1.0",
+  "description": "A self-arranged new tab board: your own wallpaper, plates and widgets, all draggable, all reachable from the keyboard.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tabula@local.dev",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png",
+    "128": "icons/icon-128.png"
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "action": {
+    "default_title": "Tabula",
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "permissions": ["storage", "bookmarks", "history", "tabs"]
+}

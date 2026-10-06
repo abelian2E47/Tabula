@@ -1,0 +1,3431 @@
+/*
+ * The board surface.
+ *
+ * Reading order matches the build order: the wallpaper, the canvas on top of
+ * it, a plate, then the chrome that floats over everything. Nothing here draws
+ * a texture: with no wallpaper the page is one flat fill, and the only things
+ * on it are the plates the user put there.
+ */
+
+.surface {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background: var(--surface);
+}
+
+/*
+ * The wallpaper, and what it is made of.
+ *
+ * The wall is the one surface nothing stands in front of: it is what the glass
+ * is made of rather than a pane over something else. That is why it is dressed
+ * in layers rather than with a backdrop-filter — there is nothing behind the
+ * wall to filter — and why it is the only surface here whose picture is a
+ * background layer rather than an element.
+ *
+ * The plate writes the picture and how far it is diffused; this file says what
+ * each material puts in front of it: a wash, a sheen, the grain of ground glass.
+ * The list is always three layers long with the picture last, so the third slot
+ * can be told to cover while the other two stay at their own size; a wall of the
+ * plainest kind spends both spare slots on 
+one` and costs nothing for it.
+ *
+ * The blur is what the layer's own edge cannot survive: a filtered layer fades
+ * out where it ends, so the wall is grown by twice the blur it is wearing and the
+ * window keeps that fringe outside itself. Otherwise a diffused wallpaper would
+ * wear a bright rim at every edge of the screen — the one thing a background is
+ * never allowed to show.
+ */
+.surface__wall {
+  position: absolute;
+  inset: calc(var(--wall-bleed, 0px) * -1);
+  background-position: center;
+  background-size: auto, auto, cover;
+  background-repeat: no-repeat;
+  --wall-layers: none, none;
+  /* A filter list that spells "leave the picture alone" without dropping the
+     declaration: `filter: blur(0px) none` is not a filter list at all, and an
+     invalid one would throw the blur away with it. */
+  --wall-tone: saturate(1);
+  /* What the material diffuses on its own, before the control is consulted, and
+     the share of it there is. Both are written on the root element by the board,
+     because both are the user's numbers and the material only says what shape
+     they take. */
+  --wall-diffuse: 0px;
+  filter: blur(calc(var(--wall-blur, 0px) + var(--wall-diffuse))) var(--wall-tone);
+}
+
+/* Clear: the picture as it arrived. Nothing in front of it, nothing done to it. */
+.surface__wall[data-material='clear'] {
+  --wall-layers: none, none;
+}
+
+/* Acrylic: the wall stays, richer and sharper. Deliberately not diffused —
+   diffusion is the other material's job, and one that did both would be a blur. */
+.surface__wall[data-material='acrylic'] {
+  --wall-layers: var(--wall-acrylic-wash), none;
+  --wall-tone: var(--wall-acrylic-ink);
+}
+
+/*
+ * Ground glass: the whole picture dissolved into light.
+ *
+ * It diffuses on its own, because that is what makes it ground glass rather than
+ * a milkier window: a pane of it showing the wallpaper sharp would be a lie about
+ * the material whatever the blur control says. The control adds to it, and how
+ * much of it there is at all is the strength the user set.
+ */
+.surface__wall[data-material='frosted'] {
+  --wall-layers: var(--wall-frost-sheen), var(--wall-frost-wash);
+  --wall-tone: var(--wall-frost-ink);
+  --wall-diffuse: var(--wall-frost-diffuse, 0px);
+}
+
+/*
+ * Liquid glass: the window keeps its picture and gains a lit face.
+ *
+ * It is the one wall material that neither grades nor dissolves what is behind
+ * it: the picture stays sharp, and what changes is that the desk now has a sheet
+ * of something lit lying across it — a catch where the light falls and a rolled
+ * edge along the top. The diffusion is deliberately left off, for the same reason
+ * acrylic's is: the material's whole claim is that it is a *sheet*, and a sheet
+ * that has been blurred into fog has stopped making that claim. Blur is the other
+ * material's job, and the blur control is still there to add it.
+ */
+.surface__wall[data-material='liquid'] {
+  --wall-layers: var(--wall-liquid-sheen), var(--wall-liquid-wash);
+}
+
+/* A colour of the user's own, laid over the picture rather than replacing it. */
+.surface__wall[data-material='custom'] {
+  --wall-layers: var(--wall-tint-wash), none;
+}
+
+/*
+ * A veil is only worth having over a photograph. Over a flat fill it would
+ * just muddy a colour the user chose from a swatch.
+ */
+.surface__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 10%, rgba(10, 12, 16, 0) 30%, rgba(10, 12, 16, 0.34) 100%),
+    linear-gradient(180deg, rgba(10, 12, 16, 0.14), rgba(10, 12, 16, 0.26));
+  pointer-events: none;
+}
+
+/* The filters a tile asks for by name, written once for the board. Nothing is
+   drawn here: it is a definition, and a definition that took up room on the board
+   would be a picture of the filter rather than a filter. */
+.spread {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* Canvas                                                              */
+/* ------------------------------------------------------------------ */
+
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(10px, 1.4vh, 18px);
+  padding: var(--wall-margin);
+  padding-bottom: clamp(12px, 1.8vh, 24px);
+  min-height: 0;
+}
+
+/*
+ * Where the rail hangs.
+ *
+ * The rail is not an overlay: it is a row or a column of the stage, so whatever
+ * edge it is moved to, the board gives up that much room and no plate is ever
+ * drawn underneath it. Which edge it is on is one attribute, and the four
+ * arrangements follow from it — a rail along the bottom is the last row, one
+ * along the top is the first, and a rail standing against a side edge turns the
+ * stage's track from a row into a column.
+ *
+ * The negative selector is the canvas, and in a view-backed page the collection
+ * standing in its place: they are the two things that are not the rail.
+ */
+.stage[data-rail='top'] {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.stage[data-rail='top'] > :not(.rail) {
+  grid-row: 2;
+}
+
+.stage[data-rail='left'] {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.stage[data-rail='right'] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.stage[data-rail='left'] > .rail {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.stage[data-rail='left'] > :not(.rail) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.stage[data-rail='right'] > .rail {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.stage[data-rail='right'] > :not(.rail) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* And along the rail's own axis, the three places it can sit: at the start of
+   the run, in the middle of it, or at the end. A row reads left to right and a
+   column top to bottom, which is why one set of three serves both. */
+.rail[data-align='start'] {
+  justify-content: flex-start;
+}
+
+.rail[data-align='center'] {
+  justify-content: center;
+}
+
+.rail[data-align='end'] {
+  justify-content: flex-end;
+}
+
+.canvas-host {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.canvas {
+  position: relative;
+}
+
+/*
+ * The grid. It is not decoration and it is not always on: it is the answer to
+ * "where can this thing go", so it appears exactly when that question is live
+ * and disappears when it is answered.
+ */
+.canvas__grid {
+  position: absolute;
+  /*
+   * The lattice is drawn from this element's own top-left corner, so this
+   * element has to *be* the canvas box: the openings start at the canvas's
+   * origin, and a grid whose origin is ten pixels away from it prints a lattice
+   * that misses every tile by ten pixels — which is exactly what it did. Any
+   * room outside the field would have to be a whole number of pitches for the
+   * two to keep agreeing, and there is nothing out there worth drawing.
+   */
+  inset: 0;
+  /*
+   * One gradient per axis, each repeating over the full pitch: the opening is
+   * outlined on both sides, then the gap and the name strip run to the next
+   * one. Drawing the two edges inside a single repetition is what keeps the
+   * lattice regular — two overlaid gradients of the same pitch would land the
+   * second set of lines inside the first set of cells.
+   */
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--tile),
+      var(--grid-line) var(--tile) calc(var(--tile) + 1px),
+      transparent calc(var(--tile) + 1px) var(--pitch-x)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-line) 0 1px,
+      transparent 1px var(--tile),
+      var(--grid-line) var(--tile) calc(var(--tile) + 1px),
+      transparent calc(var(--tile) + 1px) var(--pitch-y)
+    );
+  opacity: 0;
+  transition: opacity calc(150ms * var(--motion)) ease-out;
+  pointer-events: none;
+}
+
+.canvas--gridded .canvas__grid {
+  opacity: 0.55;
+}
+
+/* Where the plate would land if it were released now. */
+/* Where a tile would land if it were released now.
+   The plate itself flies under the pointer, so this is not a second copy of it:
+   it is a shadow on the floor, one cell big, saying "here". It slides between
+   cells on the same beat as the hand, because a shadow that jumps is read as a
+   different shadow rather than as the same one moving. */
+.drop-target {
+  position: absolute;
+  z-index: 2;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--accent) 58%, transparent),
+    0 10px 24px color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+  transition:
+    left calc(150ms * var(--motion)) var(--ease),
+    top calc(150ms * var(--motion)) var(--ease),
+    width calc(150ms * var(--motion)) var(--ease),
+    height calc(150ms * var(--motion)) var(--ease);
+  animation: target-in calc(160ms * var(--motion)) var(--ease);
+}
+
+/* One shadow per plate of a move, all at once. The group's landing is a plan
+   rather than a place, so it is quieter than a single tile's and does not pop
+   as each plate's shadow appears; the group still glides between cells. */
+.drop-target--group {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 44%, transparent);
+  animation: none;
+}
+
+/* A drop with nowhere to go keeps up with the pointer instead of sliding after
+   it: the point of it is to be where the hand is, and to look like a refusal.
+   It is drawn over the tiles around it, because the answer it gives is about
+   them — the cell it sits in is the one already taken. */
+.drop-target--refused {
+  z-index: 6;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 22%, transparent);
+  transition: none;
+}
+
+@keyframes target-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Plate                                                               */
+/* ------------------------------------------------------------------ */
+
+.plate {
+  position: absolute;
+  display: block;
+  text-align: left;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  transition:
+    left calc(180ms * var(--motion)) var(--ease),
+    top calc(180ms * var(--motion)) var(--ease),
+    width calc(180ms * var(--motion)) var(--ease),
+    height calc(180ms * var(--motion)) var(--ease);
+}
+
+/* A plate that has just been let go travels to its opening rather than blinking
+   into place — the transition above is what makes a drop read as a magnet
+   finishing its job. The plate being carried is the exception: while the
+   pointer is down it has to be exactly under the pointer, so its own movement is
+   not animated at all. A plate that trails the cursor by a sixth of a second is
+   the whole difference between dragging something and pointing at it. */
+.plate--dragging {
+  z-index: 30;
+  /* Only the plate's own placement transitions are dropped; the tile keeps its
+     own, so the lift it takes when picked up still animates. */
+  transition: none;
+}
+
+.plate:hover {
+  cursor: pointer;
+}
+
+.plate--still:hover {
+  cursor: default;
+}
+
+.plate__tile {
+  position: absolute;
+  inset: 0;
+  /*
+   * The corner is a *length*, and it is measured from the tile's narrow side.
+   *
+   * A share of the box — which is what this used to be — is not a corner at all on
+   * a tile that is not square: eighteen per cent across a two-by-one tile is twice
+   * the distance along the top edge that it is down the side, so the top and bottom
+   * curves are long and shallow while the sides are tight, and the tile looks bent
+   * rather than rounded. One length, taken from the narrow side, is the same curve
+   * on all four corners at every shape — and at the top of the range a square tile
+   * is still a circle while a wide one is a pill rather than an ellipse.
+   *
+   * The length is written by the plate, which has measured itself; the share is
+   * what the board wrote and what the plate's own answer overrides, and it is the
+   * fallback for the first paint, before anything has been measured. A share is
+   * close enough for one frame and exactly right for a square tile.
+   */
+  border-radius: var(--tile-radius, calc(var(--tile-radius-share, 18) * 1%));
+
+  /*
+   * What the tile is made of, and what is under that.
+   *
+   * The two are separate answers on purpose. The plate writes the colour the user
+   * gave it as `--tile-fill`; absent, the theme's card is what the tile was
+   * always made of, so a board nobody has touched is drawn by exactly these rules
+   * with no colour in them. Every material with a ground is then made of that
+   * colour rather than of the card — the alphas stay the theme's, the colour does
+   * not — which is what makes a coloured pane one question instead of a kind of
+   * its own: ground glass with something warm under it, or acrylic over a colour
+   * of your own.
+   *
+   * Made here rather than in the token file because a custom property is
+   * substituted where it is *declared*, and `--tile-fill` lives on the plate: a
+   * ground composed at the root would be composed before the tile is reached, and
+   * every tile on the board would then be the same colour.
+   */
+  --mat-ground: var(--tile-fill, var(--card));
+
+  background: var(--mat-ground);
+  box-shadow:
+    inset 0 0 0 1px var(--card-rim),
+    var(--shadow-1);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* A mark is a fraction of the tile it sits in, so it has to be able to ask
+     the tile how big it is. `cqmin` is the shorter side, which is what a mark
+     that must stay inside its tile can honestly be a fraction of. */
+  container-type: size;
+  transition: box-shadow calc(160ms * var(--motion)) var(--ease), transform calc(160ms * var(--motion)) var(--ease);
+}
+
+/*
+ * The right button held down: the tile's two layers come apart.
+ *
+ * A tile is two things stacked in one opening, and the only way to look at both
+ * of them at once is to open the stack. Held, the icon layer rises off the
+ * background and swells a little, the way anything looks nearer once it is picked
+ * up; the background stays in its place and steps back a hair, so that what opens
+ * between them reads as depth rather than as a mark sliding off its tile. Let go
+ * and the two settle back on the same beat.
+ *
+ * The mark travels on its pane. The pane is the box the artwork and the pane's
+ * material share, so moving both would move the logo twice — and a picture, which
+ * has no pane at all, is carried by the photograph itself.
+ *
+ * The amount is a share of the mark rather than a length: on a wall of two sizes
+ * of tile the same ten pixels is a lift on one and a twitch on the other, and the
+ * one number that stays right across them is the one measured from the thing that
+ * is moving.
+ */
+.plate--separated .plate__mark-pane,
+.plate--separated .plate__initial,
+.plate--separated .widget-glyph,
+.plate--separated .plate__photo {
+  /* The two individual properties rather than a `transform`, because every one of
+     these already carries a transform of its own — the place it was given, the
+     zoom a picture was given, the stretch — and a shorthand here would wipe it
+     out for as long as the button is held. The transition is on the base rules
+     below and not here: a transition declared on this selector would leave with
+     the class, and the mark would snap back instead of settling. */
+  translate: 0 calc(var(--mark, 40px) * -0.12);
+  scale: 1.06;
+  filter: drop-shadow(0 10px 14px rgb(0 0 0 / 0.26));
+}
+
+/* The background is not left exactly as it was: a sheet that stays perfectly
+   still reads as the icon having come loose. A hair of scale is enough to say the
+   other one moved. */
+.plate--separated .plate__tile,
+.plate--separated:hover .plate__tile {
+  transform: scale(0.97);
+}
+
+/*
+ * A mark that fills its tile has nowhere to rise to — it *is* the tile — so it
+ * steps back with the background instead, which is the same demonstration read
+ * the other way round: the picture recedes and the sheet it was cut from is what
+ * is left to look at.
+ */
+.plate--seamless.plate--separated .plate__mark-pane,
+.plate--seamless.plate--separated .plate__photo {
+  translate: 0 0;
+  scale: 0.94;
+  filter: none;
+}
+
+.plate:hover .plate__tile {
+  box-shadow:
+    inset 0 0 0 1px var(--card-rim),
+    var(--shadow-2);
+}
+
+/* A mark that has its own box — a site's icon, a picture — takes the corner
+   radius on that box. A mark drawn as strokes has no box to round, which is
+   why the setting shows on some marks and not others.
+   Its size is one number, `--icon-size`: the share of the tile's shorter side
+   the mark takes, so a 2×2 tile wears a 2×2 tile's mark and a wide tile does not
+   wear a giant one. Past 1 the mark is bigger than its tile, and the tile crops
+   it — the opening becomes the picture, which is a look a board of logos wants
+   to be able to ask for. Nothing here caps the mark by the size of the file it
+   came from: a cap would quietly overrule this number for every small favicon
+   on the web, which is most of them.
+   `cqmin` is read here rather than passed in because it has to resolve where it
+   is used: the mark measures the tile it is actually standing in. The size is
+   then snapped to whole pixels, since a bitmap drawn at 51.83px is resampled for
+   the sake of two thirds of a pixel, which is its own kind of softness. */
+.plate__tile {
+  --mark: calc(var(--icon-size, 0.54) * 100cqmin);
+  /* Where the mark stands in the tile, in per cent of the mark's own size. Two
+     numbers rather than a length so that a mark made larger carries the same
+     wording of its own placement with it, and so that a plate can answer for
+     itself by writing over the pair the board set. */
+  --mark-shift: translate(calc(var(--mark-x, 0) * 1%), calc(var(--mark-y, 0) * 1%));
+}
+
+.plate__mark-pane {
+  width: round(var(--mark), 1px);
+  height: round(var(--mark), 1px);
+  border-radius: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* The material belongs to the pane around the artwork. Keeping it on a
+     separate box means acrylic, frost and colour remain visible even when the
+     source image is opaque edge to edge. */
+  transform: var(--mark-shift);
+  /* No shadow of its own: the pane is the material, and everything a pane casts is
+     already in the material's own edge — the catch along the top, the shade along
+     the bottom, the cast under all of it. A mark's shadow does not belong here.
+     It used to be drawn here, as a shadow of the pane's *contents*, and since the
+     pane is translucent the shadow showed through the margin the material keeps
+     around the mark: a dark ring inside every pane, which on a pale board read as
+     a mount around the artwork rather than as glass. The shadow is on the mark
+     itself now, where it follows the shape of the logo rather than the box. */
+  filter: none;
+  pointer-events: none;
+  /* The mark leaves its tile for as long as the right button is held, and settles
+     back when it is let go — so both journeys are animated from here. See the
+     separation rules at the top of the file. */
+  transition:
+    translate calc(190ms * var(--motion)) var(--ease),
+    scale calc(190ms * var(--motion)) var(--ease),
+    filter calc(190ms * var(--motion)) var(--ease);
+}
+
+.plate__icon {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: contain;
+  display: block;
+  /*
+   * The mark's own shape, and then as much of the tile's as it was told to take.
+   *
+   * Stretching is asked of every mark on the board, not only of the ones that
+   * were told to fill their tile: two factors, one per axis, are written by every
+   * plate and read here. The place the mark was given stays on the pane, so a
+   * mark moved off-centre is moved by its placement and deformed by its stretch
+   * and never by both at once.
+   */
+  transform: scale(var(--icon-stretch-x, 1), var(--icon-stretch-y, 1));
+  /* The mark's own edge and cast, and around the drawing rather than around its
+     box, so a logo with a shape keeps its shape: an edge hung on the pane was an
+     edge around the square the logo arrived in. */
+  filter: none;
+  pointer-events: none;
+}
+
+.plate__initial {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: calc(var(--mark) * 0.72);
+  line-height: 1;
+  color: var(--ink-soft);
+  letter-spacing: -0.01em;
+  transform: var(--mark-shift) scale(var(--icon-stretch-x, 1), var(--icon-stretch-y, 1));
+  /* A letter has no box of its own to edge, so it takes the shadow only: the
+     same label, standing on the same plate. */
+  text-shadow: none;
+  transition:
+    translate calc(190ms * var(--motion)) var(--ease),
+    scale calc(190ms * var(--motion)) var(--ease),
+    filter calc(190ms * var(--motion)) var(--ease);
+}
+
+/* A widget standing as a mark is drawn the way a shortcut's mark is: the same
+   fraction of the tile, the same ink as a letter mark, so a row of them sits
+   together with the shortcuts beside them. */
+.widget-glyph {
+  width: round(var(--mark), 1px);
+  height: round(var(--mark), 1px);
+  color: var(--ink-soft);
+  transform: var(--mark-shift) scale(var(--icon-stretch-x, 1), var(--icon-stretch-y, 1));
+  /* A drawing is strokes, so it takes the shadow and not the edge — the same
+     rule the letter mark follows, for the same reason. */
+  filter: none;
+  pointer-events: none;
+  transition:
+    translate calc(190ms * var(--motion)) var(--ease),
+    scale calc(190ms * var(--motion)) var(--ease),
+    filter calc(190ms * var(--motion)) var(--ease);
+}
+
+/* A greeting, or any other words kept on the board. It is set in its own face
+   and size rather than the interface's, which is the whole point of having it
+   there; the size it was given is what it is drawn at whenever the tile can hold
+   it, and the component brings it down to what fits when the tile cannot. Four
+   lines is the cap: words past the fourth are dropped rather than clipped. */
+.prose {
+  margin: 0;
+  width: 100%;
+  padding: 0 8%;
+  text-align: left;
+  line-height: 1.3;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  color: var(--ink);
+}
+
+.prose[data-align='center'] {
+  text-align: center;
+}
+
+.prose[data-align='right'] {
+  text-align: right;
+}
+
+/* Words over a photograph, or through a tile whose own material was taken
+   away, read off the wall instead: the material hands the tile's ink over and
+   everything inside it follows, colours named by the user excepted. */
+.prose[data-tint='slate'] {
+  color: #6b7280;
+}
+
+.prose[data-tint='blue'] {
+  color: #2563eb;
+}
+
+.prose[data-tint='green'] {
+  color: #15803d;
+}
+
+.prose[data-tint='amber'] {
+  color: #b45309;
+}
+
+.prose[data-tint='rose'] {
+  color: #e11d48;
+}
+
+.prose[data-tint='violet'] {
+  color: #7c3aed;
+}
+
+/* Faces, not a font list: each of these is either bundled or already on the
+   machine, and each ends in a generic family so a missing one still reads as
+   the kind of face it was meant to be. */
+.prose[data-font='ui'] {
+  font-family: var(--font-ui);
+}
+
+.prose[data-font='serif'] {
+  font-family: 'Songti SC', 'Noto Serif SC', SimSun, 'Source Han Serif SC', Georgia, serif;
+}
+
+.prose[data-font='kai'] {
+  font-family: 'Kaiti SC', KaiTi, STKaiti, 'Noto Serif SC', serif;
+}
+
+.prose[data-font='round'] {
+  font-family: 'Yuanti SC', YouYuan, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.prose[data-font='mono'] {
+  font-family: var(--font-data);
+}
+
+.plate__name {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 5px;
+  max-width: calc(100% + 28px);
+  /* The size the user set for the names on the board, and the ink they set for this
+     one: a name is part of the tile it belongs to, so a tile may answer for both and
+     the board's answers are what the rest of them wear. */
+  font-size: var(--name-size, 12px);
+  color: var(--name-ink, currentColor);
+  line-height: 1;
+  font-weight: 500;
+  color: var(--on-wall);
+  text-shadow: var(--label-shadow);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* A plate too small to name is named on hover instead. */
+.plate--tight .plate__name {
+  display: none;
+}
+
+.plate__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 2px 6px rgba(12, 14, 18, 0.32);
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.plate--numbered .plate__badge {
+  animation: badge-in calc(300ms * var(--motion)) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--stagger) * 1ms);
+}
+
+@keyframes badge-in {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.plate--selected .plate__tile {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 5px color-mix(in srgb, var(--accent) 30%, transparent),
+    var(--shadow-2);
+  transform: scale(1.03);
+  transition: transform calc(160ms * var(--motion)) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Picking something dims the rest, so the answer to "what did I just gather" is
+   the loudest thing on the board rather than one ring among sixteen. What is
+   being dragged keeps its own weight. */
+.canvas--picking .plate:not(.plate--selected):not(.plate--dragging) {
+  opacity: 0.4;
+}
+
+.plate__picked {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 2px 8px rgba(12, 14, 18, 0.34);
+  pointer-events: none;
+  z-index: 7;
+  animation: picked-in calc(220ms * var(--motion)) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.plate__picked svg {
+  width: 13px;
+  height: 13px;
+}
+
+@keyframes picked-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.plate--dragging {
+  z-index: 40;
+  cursor: grabbing;
+  transition: none;
+}
+
+.plate--dragging .plate__tile {
+  box-shadow:
+    inset 0 0 0 1px var(--card-rim),
+    var(--shadow-3);
+  transform: scale(1.05);
+}
+
+.plate--dragging .plate__name {
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------------------------ */
+/* What a widget prints                                                */
+/* ------------------------------------------------------------------ */
+
+.plate__stack {
+  position: absolute;
+  inset: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  z-index: 1;
+}
+
+.plate__kicker {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.plate__kicker b {
+  font-family: var(--font-data);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+}
+
+.plate__rows {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plate__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.plate__row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plate__row em {
+  margin-left: auto;
+  flex: none;
+  font-style: normal;
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.plate__mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--well);
+}
+
+/* Clock */
+.clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+.clock__hm {
+  font-size: clamp(30px, calc(var(--tile) * 0.58), 74px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.clock__sec {
+  font-family: var(--font-data);
+  font-size: clamp(12px, calc(var(--tile) * 0.19), 20px);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.clock__date {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* Image plates */
+.plate__photo {
+  /* Same reason as a filled mark: a percentage height against a centred grid
+     item is auto, so a wide photo tile would wear a square picture and clip it. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* The picture's own corners, asked of the picture and of nothing else.
+     A share of its own box, so the top of the range is the shape of the picture:
+     a square photograph rounds into a circle and a wide one into an ellipse. The
+     tile goes on cropping whatever the picture does — a tile is the shape it was
+     given, and a picture inside it cannot be rounder than the opening it is seen
+     through — so this is the corners of the photograph, drawn inside the tile's.
+     A picture that has been zoomed past its tile has no corners to round at all,
+     which is why the control shows up most on a picture fitted inside one. */
+  border-radius: var(--image-radius, 0%);
+  object-fit: cover;
+  display: block;
+  filter: blur(var(--image-blur, 0px));
+  /* The picture's size is a zoom about the size it covers its tile at, so the
+     slider crops the photograph rather than shrinking it into the middle of the
+     card: above the mark the tile sees the middle of the picture, below it the
+     whole picture with the tile's own ground around it. The place the mark was
+     given carries the picture with it, which is how the part worth keeping is
+     brought to the middle of the tile. */
+  /* Both the zoom and the blur's own magnification are plain numbers here: the
+     off-focus copy of a photograph is drawn a little larger so that its soft
+     edge cannot show inside the tile's edge, and a length divided by a length is
+     the only way a `calc` turns the setting's pixels into the factor for it.
+     The stretch is the same pair of factors every other mark reads, one per
+     axis, so a picture can be pulled wide as well as zoomed. */
+  transform: var(--mark-shift)
+    scale(
+      calc(var(--photo-scale, 1) * (1 + var(--image-blur, 0px) / 160px) * var(--icon-stretch-x, 1)),
+      calc(var(--photo-scale, 1) * (1 + var(--image-blur, 0px) / 160px) * var(--icon-stretch-y, 1))
+    );
+  transition:
+    filter calc(180ms * var(--motion)) var(--ease),
+    transform calc(180ms * var(--motion)) var(--ease),
+    translate calc(190ms * var(--motion)) var(--ease),
+    scale calc(190ms * var(--motion)) var(--ease);
+}
+
+.plate--photo .plate__tile {
+  background: var(--well);
+}
+
+/*
+ * A picture that *is* the tile rather than something sitting on it: the mark
+ * fills the opening edge to edge and the tile clips it, so the tile's own
+ * corner radius is what rounds the picture — the two roundings cannot disagree
+ * because there is only one of them. Nothing of the card shows through: no
+ * fill, no rim, and the tile's shadow is left to say where the edge is.
+ */
+.plate--seamless .plate__tile {
+  background: transparent;
+  box-shadow: 0 0 0 0 transparent, var(--shadow-1);
+}
+
+.plate--seamless:hover .plate__tile {
+  box-shadow: 0 0 0 0 transparent, var(--shadow-2);
+}
+
+/*
+ * A filled mark is stretched, not magnified, and what it cannot reach is its own
+ * colour.
+ *
+ * Filling used to be a magnification — the mark's box pinned edge to edge and
+ * grown along the tile's diagonal until it covered the corners — and what that
+ * drew was a bigger logo: the same picture, blown up by the height of the tile,
+ * at whatever quality the file had. A tile filled with the GitHub mark came out
+ * as a large GitHub mark rather than as a tile that is the colour of one.
+ *
+ * So the growth is spent on the ground instead (`plate__bed--mark` spreads the
+ * mark's own edge pixels out to the tile's edges) and the mark is stretched over
+ * it by as much as the user asked for and no more. The mark keeps its own shape
+ * at nought, which is what a logo wants; past that it takes back some of the
+ * room the tile is giving it, along the one axis that has room. Either way the
+ * tile is filled, because the part the mark never reaches is the colour the mark
+ * itself ends in.
+ *
+ * The mark is lifted over the bed rather than left to the paint order: the bed is
+ * absolutely placed and the mark is an ordinary grid child, so without this the
+ * spread ground would cover the very mark it was spread from.
+ */
+.plate--seamless .plate__mark-pane {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  transform: none;
+  border-radius: inherit;
+}
+
+.plate--seamless .plate__icon {
+  width: 100%;
+  height: 100%;
+  /* The mark's own shape, and then as much of the tile's as it was told to take:
+     two factors, one per axis, each nought when the tile has no room to give on
+     that axis. A square tile can never deform its mark, which is the honest
+     answer — there is no gap to close and nothing to stretch into. */
+  object-fit: contain;
+  object-position: center;
+  /* The place the mark was given comes first and the stretch after it, so a mark
+     moved off-centre is still moved by the setting rather than by its own scale. */
+  transform: var(--mark-shift) scale(var(--icon-stretch-x, 1), var(--icon-stretch-y, 1));
+  /* The corners of the drawn mark, which is the one place this setting has
+     anywhere to show once the mark is as big as its tile. */
+  border-radius: 0;
+}
+
+/* A photograph is left alone: cropping a picture the user chose to look at, or
+   spreading its edge pixels over the tile, is changing what it shows, which is not
+   what filling a tile is for. */
+.plate--seamless .plate__photo {
+  object-fit: cover;
+}
+
+/* A photograph's bed: the file under itself, magnified until its middle is the
+   whole opening and out of focus until it is a colour. Nothing transparent is
+   carried to the edges, which is what a *fitted* copy would spread: a picture with
+   corners that are not there would fill the ring with nothing. */
+.plate--seamless .plate__bed {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 200% 200%;
+  /* "Twice its size" is what keeps the middle of the picture in the middle of the
+     tile; past about this the picture is a colour, and short of it the picture is
+     still recognisable as a stretched copy of itself. */
+  filter: blur(calc(var(--bg-bed-blur, 12px) * 1.4)) saturate(1.35);
+  /* A little more, so that the blurred edge of the copy cannot leave a lighter
+     line at the tile's own edge. */
+  transform: scale(1.06);
+  pointer-events: none;
+}
+
+/*
+ * A mark's bed: the same file, at the mark's own size, *spread*.
+ *
+ * Spread is a dilation — the pixels at the mark's edge carried outward to the tile's
+ * edges and no further — which is the one operation that adds no colour the file
+ * does not already have. A tile filled with a mark whose edge is black goes black; a
+ * mark on white takes its white; a mark that ends in a colour leaves that colour
+ * around itself. The mark itself is drawn over this at its own size, so the two meet
+ * exactly where the mark ends: the picture is not magnified, and nothing is sampled,
+ * because the spread copy *is* the file.
+ *
+ * The filter is a dilation and a small blur, and it is defined once for the board
+ * (see `Board.tsx`) rather than per tile — a filter is an element, not a value, and
+ * every tile on the board is asking it the same question.
+ */
+.plate--seamless .plate__bed--mark {
+  background-size: var(--mark) var(--mark);
+  filter: url('#mark-spread');
+}
+
+/* ------------------------------------------------------------------ */
+/* What a tile stands on                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A tile is a card, a colour, or nothing at all.
+ *
+ * This is the question the tile's material used to be asked as well, back when
+ * a tile could be a pane of acrylic or ground glass. Those two are gone: what a
+ * tile is made of is the board's business, and the only thing the second answer
+ * ever said was "let the wallpaper through" in three spellings. What is left is
+ * the ground under the tile — the theme's card by default, a colour of the
+ * user's, or nothing — and it is written on the tile rather than on the board,
+ * so a tile's own answer and the board's answer are the same kind of thing and
+ * one set of rules serves both.
+ *
+ * The ink moves here and not at the root because a tile with no card answers for
+ * the words standing on it, and the drawer is not standing on the wallpaper.
+ * Everything inside a tile moves with its ground — the letter that stands in for
+ * a missing icon, the list a widget prints, the well under a folder's marks.
+ *
+ * A mark's own material is a different question and is still asked, further
+ * down: a logo is not a tile, and a favicon over a photograph really does want a
+ * pane of its own.
+ */
+.plate__tile[data-fill='none'] {
+  background: transparent;
+  box-shadow: none;
+  /* A tile taken away is not a material, it is the absence of one, and the only
+     thing left behind the mark is the user's wallpaper. So the tile's ink
+     becomes the wall's — which is also the difference between a bookmarks list
+     you can read over a photograph and one you cannot. */
+  --ink: var(--on-wall);
+  --ink-soft: var(--on-wall-soft);
+  --ink-faint: var(--on-wall-soft);
+  --well: color-mix(in srgb, var(--on-wall) 12%, transparent);
+  text-shadow: var(--label-shadow);
+}
+
+.plate__tile[data-fill='none']:hover,
+.plate:hover .plate__tile[data-fill='none'] {
+  background: color-mix(in srgb, var(--on-wall) 9%, transparent);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* The background layer's material                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * What the tile itself is made of.
+ *
+ * The layer underneath is the tile's *background colour* — `--tile-fill` when the
+ * tile or the board named one, the theme's card otherwise — and each material is
+ * that colour worn a different way rather than a colour of its own. This is the
+ * one place the two questions meet, and holding them apart is what lets the colour
+ * be changed without the glass and the glass without the colour.
+ *
+ * The amounts come from the board as `--bg-*` (see `materialVars`), worked out
+ * once from the two settings on this layer — so a board asked for thicker
+ * backgrounds thickens all of them, and a tile given amounts of its own writes its
+ * own set over itself and these rules go on reading names. What separates the four
+ * kinds is their shape rather than their ground: a card with a cut edge, a graded
+ * skin with the wall sharpened behind it, a ground pane that dissolves that wall,
+ * and a lit sheet that bends it. `none` is none of them — the colour exactly as it
+ * is, which is the flat card the board has always drawn and the answer a board
+ * nobody has touched gives.
+ *
+ * The material is the tile's own surface, so it takes the tile's shape: nothing
+ * here rounds anything, because `--tile-radius` and the crop belong to the tile and
+ * a material that rounded itself would disagree with the edge its own shadow is
+ * cast from. Card and glass alike turn away from the same light as the panes in
+ * `tokens.css`, because a board with two lamps over it reads as two boards.
+ */
+.plate__tile[data-background='solid'] {
+  isolation: isolate;
+  background: color-mix(in srgb, var(--mat-ground) var(--bg-solid-mix, 100%), transparent);
+  /* What says "made of something" on a card is its edge and what it casts: a cut
+     along the top and the left where the light lands, shade gathering on the other
+     two, and a step of shadow under the whole of it — the gauge between a card and
+     a sheet, which is the difference the setting has to make. */
+  box-shadow:
+    inset 0 1px 0 var(--acrylic-cut),
+    inset 1px 0 0 var(--acrylic-rim),
+    inset -1px -3px 6px rgb(10 12 16 / var(--bg-sheet-shade, 0.1)),
+    inset 0 0 0 1px color-mix(in srgb, var(--card-rim) 80%, transparent),
+    var(--acrylic-cast);
+}
+
+/* Clear acrylic: the wall stays, richer and sharper. The tile's own colour is
+   let into it by the share the strength asks for, and what is left of the tile is
+   the grade and the cut. */
+.plate__tile[data-background='acrylic'] {
+  isolation: isolate;
+  background-color: color-mix(in srgb, var(--mat-ground) var(--bg-acrylic-mix, 18%), transparent);
+  background-image: var(--acrylic-sheen);
+  backdrop-filter: var(--bg-acrylic-filter, none);
+  box-shadow:
+    inset 0 1px 0 var(--acrylic-cut),
+    inset 1px 0 0 var(--acrylic-rim),
+    inset -1px -3px 6px rgb(10 12 16 / var(--bg-sheet-shade, 0.1)),
+    inset 0 0 0 1px color-mix(in srgb, var(--acrylic-cut) 45%, transparent),
+    var(--acrylic-cast);
+}
+
+/* Ground glass: the wall stays, dissolved. The grain is the only material whose
+   surface is a texture, and it is blended rather than laid over, so the one
+   texture serves a lit pane and a dark one. */
+.plate__tile[data-background='frosted'] {
+  isolation: isolate;
+  background-color: color-mix(in srgb, var(--mat-ground) var(--bg-glass-mix, 78%), transparent);
+  background-image: var(--glass-sheen), var(--mat-texture, var(--glass-grain));
+  background-size: auto, 140px 140px;
+  background-blend-mode: normal, multiply;
+  backdrop-filter: var(--bg-frost-filter, none);
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    inset 0 -1px 0 var(--glass-floor),
+    inset -1px -3px 6px rgb(10 12 16 / var(--bg-sheet-shade, 0.1)),
+    inset 0 0 0 1px var(--glass-rim),
+    var(--glass-cast);
+}
+
+/* Liquid glass: the lit sheet, with the same catch the panes wear — the one light
+   over the desk, which every liquid sheet on the board catches on the same side. */
+.plate__tile[data-background='liquid'] {
+  isolation: isolate;
+  background-color: color-mix(in srgb, var(--mat-ground) var(--bg-liquid-mix, 34%), transparent);
+  background-image:
+    radial-gradient(
+      130% 110% at calc(50% + var(--light-dx, 0) * 46%) calc(-10% + var(--light-dy, 0) * 34%),
+      var(--liquid-catch) 0%,
+      rgba(255, 255, 255, 0) 46%
+    ),
+    var(--liquid-body);
+  backdrop-filter: var(--bg-liquid-filter, none);
+  box-shadow:
+    inset 0 1px 1px var(--acrylic-cut),
+    inset 1px 1px 1px var(--liquid-rim),
+    inset -1px -3px 6px rgb(10 12 16 / var(--bg-sheet-shade, 0.1)),
+    inset 0 0 0 1px var(--glass-rim),
+    var(--liquid-cast);
+}
+
+/* A folder is a card mixed with its own well, because what it holds is what it is
+   made of — and the mix is written over the *ground* rather than the background,
+   so that a folder given a material goes on being a folder: every rule above reads
+   this name, and none of them has to know about folders. */
+.plate--folder .plate__tile[data-fill='custom'] {
+  --mat-ground: color-mix(in srgb, var(--tile-fill, var(--card)) 82%, var(--well));
+}
+
+/*
+ * The icon layer's material: the pane a logo stands on.
+ *
+ * The mark is the surface *within* the tile that can want a plate of its own — the
+ * two layers are asked apart because the same amount of frost across a chip and
+ * across an opening are not the same amount of frost, and because a mark is looked
+ * at for its edge and its gloss where a background is looked at for its colour. A
+ * favicon on a photograph has nothing under it at all, and a logo drawn out to the
+ * edge of its file has nothing either — the two cases where a mark is not legible
+ * on the tile it was put on. So the five answers are offered here as well, and
+ * `none` is the one that draws a mark the way every mark has always been drawn.
+ *
+ * The pane is the mark's own box, which is why it takes the mark's stretch and why
+ * a mark told to fill its tile takes its pane with it. It is drawn on the mark
+ * rather than around it: a wrapper element would be a second box to keep in step
+ * with this one, and the one thing a pane must not do is disagree with the mark
+ * standing on it.
+ *
+ * The mark's edge and its cast are worked out on the tile, from the ground the
+ * marks stand on — and with a pane in the picture that ground is the pane's, not
+ * the wall's. So a pane moves those two to the card's ink as well: a mark edged in
+ * the wallpaper's ink, standing on a bright pane, is edged in nothing.
+ *
+ * The two are restated here rather than nudged through the ink they read, because
+ * a custom property is substituted where it is written: an outline composed on the
+ * tile has already taken the tile's ink by the time the icon inherits it.
+ *
+ * The pane's own ground is the theme's card. It used to be a colour of its own,
+ * asked on every layer beside the tile's, and two colour controls for two layers of
+ * one tile is the same question asked twice in two places — the tile's background
+ * colour is the colour of the tile, and the mark stands on the card.
+ *
+ * The marks this reaches are everything a tile draws instead of a logo: the letter
+ * that stands in for one, a widget's glyph, the block a widget prints its content
+ * on, a folder's cells, and the film over a picture. A widget's content belongs
+ * here for the same reason a folder's cells do — the setting was already offered on
+ * those tiles and there was no rule spending it, which reads as a setting that does
+ * nothing. A clock is a face, a greeting is a block of words, a list is a stack, a
+ * picture is a picture: each is the thing standing on the tile, and each gets the
+ * plate the other kinds get.
+ *
+ * A picture is the one of them the material is laid *over* rather than under, so
+ * its pane is a sheet of glass on the photograph rather than a plate beneath it,
+ * and the two glasses are the ones drawn that way. A solid plate is a card, and a
+ * card goes under the photograph: there is no film to draw, and what it leaves is
+ * the gauge the picture stands inside.
+ */
+.plate__tile[data-mark='solid'] .plate__mark-pane,
+.plate__tile[data-mark='solid'] .plate__initial,
+.plate__tile[data-mark='solid'] .widget-glyph,
+.plate__tile[data-mark='solid'] .folder__cell,
+.plate__tile[data-mark='solid'] .clock,
+.plate__tile[data-mark='solid'] .prose,
+.plate__tile[data-mark='solid'] .plate__stack,
+.plate__tile[data-mark='acrylic'] .plate__mark-pane,
+.plate__tile[data-mark='acrylic'] .plate__initial,
+.plate__tile[data-mark='acrylic'] .widget-glyph,
+.plate__tile[data-mark='acrylic'] .folder__cell,
+.plate__tile[data-mark='acrylic'] .clock,
+.plate__tile[data-mark='acrylic'] .prose,
+.plate__tile[data-mark='acrylic'] .plate__stack,
+.plate__tile[data-mark='acrylic'] .plate__pane,
+.plate__tile[data-mark='frosted'] .plate__mark-pane,
+.plate__tile[data-mark='frosted'] .plate__initial,
+.plate__tile[data-mark='frosted'] .widget-glyph,
+.plate__tile[data-mark='frosted'] .folder__cell,
+.plate__tile[data-mark='frosted'] .clock,
+.plate__tile[data-mark='frosted'] .prose,
+.plate__tile[data-mark='frosted'] .plate__stack,
+.plate__tile[data-mark='frosted'] .plate__pane,
+.plate__tile[data-mark='liquid'] .plate__mark-pane,
+.plate__tile[data-mark='liquid'] .plate__initial,
+.plate__tile[data-mark='liquid'] .widget-glyph,
+.plate__tile[data-mark='liquid'] .folder__cell,
+.plate__tile[data-mark='liquid'] .clock,
+.plate__tile[data-mark='liquid'] .prose,
+.plate__tile[data-mark='liquid'] .plate__stack,
+.plate__tile[data-mark='liquid'] .plate__pane {
+  /* The pane gets the selected icon-material ground; texture rules below add the
+     visible finish for acrylic, frosted and liquid modes. */
+  --mark-ground: var(--mark-fill, var(--card));
+  background: var(--mark-ground);
+}
+
+/* Icon material changes the artwork only. It never paints a backing surface. */
+.plate__tile[data-mark='solid'] .plate__icon {
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.plate__tile[data-mark='acrylic'] .plate__icon {
+  filter: saturate(1.28) brightness(1.06);
+}
+
+.plate__tile[data-mark='frosted'] .plate__icon {
+  filter: blur(0.7px) saturate(0.82) brightness(1.08);
+}
+
+.plate__tile[data-mark='liquid'] .plate__icon {
+  filter: saturate(1.34) brightness(1.1);
+}
+
+/* A logo arrives with a box of its own and a letter does not, so a pane makes one for the letter at the same size. */
+.plate__tile[data-mark]:not([data-mark='none']) .plate__initial {
+  width: round(var(--mark), 1px);
+  height: round(var(--mark), 1px);
+  display: grid;
+  place-items: center;
+}
+
+/* And the plate sits *behind* the mark rather than being the mark.
+ *
+ * A logo arrives as a file with a box of its own, and most of them are opaque
+ * squares: with the pane exactly the size of the logo, the pane is hidden behind
+ * it, and the four materials read as one and the same — a shadow, and nothing
+ * else. A margin between the two is the whole difference between a plate and a
+ * cage, so the mark is drawn inside its pane with a share of it left showing.
+ *
+ * A mark left transparent keeps the mark at its full size, which is how every
+ * board that never asked for a material still looks. */
+.plate__tile[data-mark]:not([data-mark='none']) .plate__mark-pane,
+.plate__tile[data-mark]:not([data-mark='none']) .widget-glyph {
+  padding: calc(var(--mark) * 0.15);
+  box-sizing: border-box;
+}
+
+/* A picture's pane is not a plate the picture stands on but a sheet laid over it,
+   so the margin a mark keeps between its edge and its plate is not wanted here at
+   all: the sheet is the size of the tile and the picture is the size the size
+   control says. A picture is therefore never padded, and a solid plate shows as
+   the gauge it leaves around the picture rather than as space inside the film. */
+
+/* A round tile holds a round chip rather than a square one — not by a rule of its
+   own, but because the tile already crops what is inside it, and a pane wider than
+   the opening is cropped that way. A chip smaller than its opening is the case the
+   crop cannot reach, so it is given the same corner the tile was given: one
+   setting, read one box further in — as a *share* here, because a chip is a small
+   square box and the same share of it is the same shape at every size. The mark's
+   *artwork* is left alone — a logo keeps its own shape, which is the whole reason it
+   is a logo — and only a box the material drew is rounded. */
+.plate__tile[data-mark]:not([data-mark='none']) .plate__mark-pane,
+.plate__tile[data-mark]:not([data-mark='none']) .plate__initial,
+.plate__tile[data-mark]:not([data-mark='none']) .widget-glyph {
+  border-radius: calc(var(--tile-radius-share, 0) * 1%);
+}
+
+/*
+ * The four materials, and how much of each there is.
+ *
+ * The shares are `--acrylic-mix` and `--glass-mix` off the root element, where
+ * the board works them out once from two settings; the diffusion is
+ * `--acrylic-filter` and `--frost-filter`, off the same element, for the same
+ * reason — the performance stop decides whether this machine can afford them, and
+ * a decision made in one place is a decision that can be seen.
+ *
+ * One list of selectors serves every kind of mark the board draws, because they
+ * are the same object: a logo on a link, the letter standing in for one, a
+ * widget's glyph, each of the up to four cells of a folder, the block a widget
+ * prints its content on, and the film over a picture. A folder used to be left
+ * out of it, which is why its material setting looked like it did nothing: the
+ * value arrived, the rule that spends it did not name the element. The same was
+ * true of a clock and of a block of words, which have no glyph and so had
+ * nothing on the list to spend the material on.
+ */
+.plate__tile[data-mark='solid'] .plate__mark-pane,
+.plate__tile[data-mark='solid'] .plate__initial,
+.plate__tile[data-mark='solid'] .widget-glyph,
+.plate__tile[data-mark='solid'] .folder__cell,
+.plate__tile[data-mark='solid'] .folder__icon,
+.plate__tile[data-mark='solid'] .folder__initial,
+.plate__tile[data-mark='solid'] .clock,
+.plate__tile[data-mark='solid'] .prose,
+.plate__tile[data-mark='solid'] .plate__stack {
+  /* A card, in the pane's own ground, with the amount of it the strength asks for
+     and the piece of it the transparency gives up — the same two questions the
+     glasses are asked, answered by a card rather than by a sheet. */
+  background-color: color-mix(in srgb, var(--mark-ground) var(--mark-solid-mix, 100%), transparent);
+  box-shadow:
+    inset 0 1px 0 var(--acrylic-cut),
+    inset 1px 0 0 var(--acrylic-rim),
+    inset -1px -3px 5px rgb(10 12 16 / var(--mark-sheet-shade, 0.1)),
+    inset 0 0 0 1px color-mix(in srgb, var(--card-rim) 80%, transparent),
+    var(--acrylic-cast);
+}
+
+.plate__tile[data-mark='acrylic'] .plate__mark-pane,
+.plate__tile[data-mark='acrylic'] .plate__initial,
+.plate__tile[data-mark='acrylic'] .widget-glyph,
+.plate__tile[data-mark='acrylic'] .folder__cell,
+.plate__tile[data-mark='acrylic'] .folder__icon,
+.plate__tile[data-mark='acrylic'] .folder__initial,
+.plate__tile[data-mark='acrylic'] .clock,
+.plate__tile[data-mark='acrylic'] .prose,
+.plate__tile[data-mark='acrylic'] .plate__stack,
+.plate__tile[data-mark='acrylic'] .plate__pane {
+  background-color: color-mix(in srgb, var(--mark-ground) var(--mark-acrylic-mix, 18%), transparent);
+  background-image: var(--acrylic-sheen);
+  backdrop-filter: var(--mark-acrylic-filter, none);
+  /* The cut: a bright line along the top and the left where the polished edge
+     faces the light, shade gathering on the other two, and the whole rim held
+     together by a hairline of the pane's own light. */
+  box-shadow:
+    inset 0 1px 0 var(--acrylic-cut),
+    inset 1px 0 0 var(--acrylic-rim),
+    /* The sheet's own depth, along the two edges that turn away from the light.
+       The catch along the top and the left is white and this is not, and the pair
+       is what a sheet of glass looks like from the outside — including on a pale
+       desk, where there is nothing behind the sheet to see through it. It is a
+       shade rather than a line, and it is on two sides rather than four, because a
+       pane ringed on every side is not a sheet, it is a mount. */
+    inset -1px -3px 5px rgb(10 12 16 / var(--mark-sheet-shade, 0.1)),
+    inset 0 0 0 1px color-mix(in srgb, var(--acrylic-cut) 45%, transparent),
+    var(--acrylic-cast);
+}
+
+.plate__tile[data-mark='frosted'] .plate__mark-pane,
+.plate__tile[data-mark='frosted'] .plate__initial,
+.plate__tile[data-mark='frosted'] .widget-glyph,
+.plate__tile[data-mark='frosted'] .folder__cell,
+.plate__tile[data-mark='frosted'] .folder__icon,
+.plate__tile[data-mark='frosted'] .folder__initial,
+.plate__tile[data-mark='frosted'] .clock,
+.plate__tile[data-mark='frosted'] .prose,
+.plate__tile[data-mark='frosted'] .plate__stack,
+.plate__tile[data-mark='frosted'] .plate__pane {
+  background-color: color-mix(in srgb, var(--mark-ground) var(--mark-glass-mix, 78%), transparent);
+  background-image: var(--glass-sheen), var(--mat-texture, var(--glass-grain));
+  background-size: auto, 140px 140px;
+  /* Over, not overlaid: the grain is a mid grey, and `overlay` lays it on without
+     changing anything a light pane already is — white stays white, and the one
+     material whose whole surface is a texture had no texture at all on a pale
+     desktop. Multiplied, the grain keeps its own value and shows on a lit pane and
+     a dark one alike, which is what a surface that has been ground actually does. */
+  background-blend-mode: normal, multiply;
+  /* A pane the size of a mark wants less diffusion than a tile does: the same
+     call across forty pixels is not glass, it is a smudge. */
+  backdrop-filter: var(--mark-frost-filter, none);
+  box-shadow:
+    inset 0 1px 0 var(--glass-top),
+    inset 0 -1px 0 var(--glass-floor),
+    inset -1px -3px 5px rgb(10 12 16 / var(--mark-sheet-shade, 0.1)),
+    inset 0 0 0 1px var(--glass-rim),
+    var(--glass-cast);
+}
+
+/*
+ * Liquid glass: the sheet that is thicker than a lens and thinner than a window.
+ *
+ * What separates it from the other two is that it is *lit*: acrylic shows the wall
+ * through a cut edge, ground glass dissolves the wall, and this one carries a light
+ * across its face — a catch that slides as the light moves, a rim that gathers the
+ * light along the side it comes from, and a bend where the wall passes under the
+ * cut, which is the refraction the material is named for. The bend is a filter pass
+ * of its own and the first thing a slow machine gives up; without it the material
+ * is still liquid, read from the sheen and the edge.
+ *
+ * The light is the page's, not this sheet's: `--light-dx` and `--light-dy` are the
+ * pointer's offset from the middle of the window, so every liquid sheet on the
+ * board catches the same light on the same side. That is what a single lamp over a
+ * desk does, and it is the difference between a wall of glass and a set of tiles
+ * that each happen to have a gradient on them.
+ */
+.plate__tile[data-mark='liquid'] .plate__mark-pane,
+.plate__tile[data-mark='liquid'] .plate__initial,
+.plate__tile[data-mark='liquid'] .widget-glyph,
+.plate__tile[data-mark='liquid'] .folder__cell,
+.plate__tile[data-mark='liquid'] .folder__icon,
+.plate__tile[data-mark='liquid'] .folder__initial,
+.plate__tile[data-mark='liquid'] .clock,
+.plate__tile[data-mark='liquid'] .prose,
+.plate__tile[data-mark='liquid'] .plate__stack,
+.plate__tile[data-mark='liquid'] .plate__pane {
+  background-color: color-mix(in srgb, var(--mark-ground) var(--mark-liquid-mix, 34%), transparent);
+  background-image:
+    radial-gradient(
+      130% 110% at calc(50% + var(--light-dx, 0) * 46%) calc(-10% + var(--light-dy, 0) * 34%),
+      var(--liquid-catch) 0%,
+      rgba(255, 255, 255, 0) 46%
+    ),
+    var(--liquid-body);
+  backdrop-filter: var(--mark-liquid-filter, none);
+  box-shadow:
+    inset 0 1px 1px var(--acrylic-cut),
+    inset 1px 1px 1px var(--liquid-rim),
+    inset -1px -3px 5px rgb(10 12 16 / var(--mark-sheet-shade, 0.1)),
+    inset 0 0 0 1px var(--glass-rim),
+    var(--liquid-cast);
+}
+
+/*
+ * The milder diffusion for a pane the size of a mark.
+ *
+ * Everything below is a chip worn on a tile — a logo, the letter standing in for
+ * one, a widget's glyph, a folder's cell — and the blur that turns a window's
+ * worth of wall into light turns a chip's worth of it into nothing. The kinds that
+ * are a tile's own surface (a clock, a block of words, a stack of rows, the mount
+ * a picture stands on) keep the window-sized measure, and everything here is
+ * written before the contrast block below so that a reader who asked for more
+ * contrast still gets its plain pane.
+ */
+.plate__tile[data-mark='frosted'] .plate__mark-pane,
+.plate__tile[data-mark='frosted'] .plate__initial,
+.plate__tile[data-mark='frosted'] .widget-glyph,
+.plate__tile[data-mark='frosted'] .folder__cell,
+.plate__tile[data-mark='frosted'] .folder__icon,
+.plate__tile[data-mark='frosted'] .folder__initial {
+  backdrop-filter: var(--mark-frost-filter-mark, none);
+}
+
+/* Liquid glass has the same two sizes for the same reason, and one more: the bend
+   at the rim is a property of a rim, so across a chip it is a smaller bend. */
+.plate__tile[data-mark='liquid'] .plate__mark-pane,
+.plate__tile[data-mark='liquid'] .plate__initial,
+.plate__tile[data-mark='liquid'] .widget-glyph,
+.plate__tile[data-mark='liquid'] .folder__cell,
+.plate__tile[data-mark='liquid'] .folder__icon,
+.plate__tile[data-mark='liquid'] .folder__initial {
+  backdrop-filter: var(--mark-liquid-filter-mark, none);
+}
+
+/*
+ * The pane a picture wears.
+ *
+ * Every other thing on a tile stands *on* a pane: a logo, a letter, a clock, a
+ * block of words, a stack of rows — the material is the ground the thing was laid
+ * on, with a share of the pane left showing all round it. A picture is the one
+ * thing the material is laid *over*: a photograph's material is a sheet of glass,
+ * so the pane is a film on the picture rather than a ground under it, and what it
+ * does is glaze — frosted glass frosts the picture, acrylic grades it. The same
+ * pane element therefore means the opposite thing here, which is why the rule
+ * that gives it its ground is the one that names the picture.
+ *
+ * It covers the whole tile rather than a share of it, so the sheet is a sheet and
+ * not a mount, and it takes the tile's corners with it. It is inert: the picture
+ * under it has to stay draggable and clickable, and the film is not a surface
+ * anything is asked of.
+ *
+ * `solid` is not a sheet and is not drawn here. It is the card a photograph can be
+ * laid on, so the stylesheet keeps it behind the picture and lets it show as the
+ * gauge the picture leaves around itself — a frame the user asked for by asking
+ * for a card, and one no photograph gets by default.
+ */
+.plate__pane {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/*
+ * And the depth a sheet holds along its own edge, drawn only where there is room
+ * to see it.
+ *
+ * The same softness that reads as the thickness of a window reads as the whole
+ * face of a chip, so the chips do without it and take the bevel instead: a shade
+ * measured in from the edge is a fraction of the thing it is measured on, and a
+ * pane the size of a tile is the only pane big enough to spend it. Over a
+ * photograph it is what tells a person the picture is *under* something: the
+ * glass darkens where it turns away from the eye, and the photograph behind it
+ * still has every edge it had.
+ */
+.plate--photo .plate__tile[data-mark='acrylic'] .plate__pane::after,
+.plate--photo .plate__tile[data-mark='frosted'] .plate__pane::after,
+.plate--photo .plate__tile[data-mark='liquid'] .plate__pane::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 22px rgb(10 12 16 / calc(var(--mark-sheet-shade, 0.1) * 1.4));
+  pointer-events: none;
+}
+
+/*
+ * A picture fills its tile whatever the tile's second layer is made of.
+ *
+ * A solid plate is a card, and a card is what a thing is laid on — but a picture is
+ * not laid on a card the way a logo is: it *is* the tile's surface, so the card stays
+ * behind the photograph, which covers it. The gauge this used to leave around the
+ * picture read as a framed photograph, and it only appeared once a material was
+ * chosen — so picking a material quietly shrank the picture, which is the one thing
+ * a picture's material must not do.
+ */
+
+/* And what a widget prints takes the tile's corners with it, because it is
+   standing in the tile's own opening rather than in a box of its own. */
+.plate__tile[data-mark]:not([data-mark='none']) .clock,
+.plate__tile[data-mark]:not([data-mark='none']) .prose,
+.plate__tile[data-mark]:not([data-mark='none']) .plate__stack {
+  border-radius: var(--radius);
+}
+
+/*
+ * Fill mode takes the pane's padding away, and nothing else.
+ *
+ * It used to take the pane's ground, its diffusion, its edge and its shadow as
+ * well, on the argument that a mark standing on its own colour wants none of them
+ * — and the argument was wrong in the one way that mattered: it meant that the
+ * moment a tile was filled, three settings the user had just made stopped doing
+ * anything at all, with nothing on screen to say why. The material, the corners
+ * and the edge are the mark's, and the mark is still a mark when its tile is
+ * full: what was actually in the way was the padding, which is the space a plate
+ * keeps between its edge and the thing standing on it, and there is no such space
+ * in an opening that the thing itself is meant to fill.
+ *
+ * So the pane now covers the opening and *is* the material — a sheet of acrylic or
+ * ground glass laid over the mark's own spread colour — and the icon is drawn on
+ * top of it. A tile with no material is unchanged, because a transparent pane over
+ * a spread ground is exactly what it always was.
+ */
+.plate--seamless .plate__tile[data-mark] .plate__mark-pane {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: inherit;
+  /* The pane is the opening now, so the mark's own placement is spent on the icon
+     rather than on the pane: moving the pane would move the tile's colour. */
+  transform: none;
+}
+
+/* And the mark's own edge comes off with it. The icon has become the tile, and a
+   tile has one edge, drawn by the tile: an outline hung on the mark at the tile's
+   border is a second edge a pixel inside the first, which is what a stretched icon
+   looked like — a white line around the inside of every filled tile. */
+.plate--seamless .plate__tile[data-mark='solid'] .plate__icon {
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.plate--seamless .plate__tile[data-mark='acrylic'] .plate__icon {
+  filter: saturate(1.28) brightness(1.06);
+}
+
+.plate--seamless .plate__tile[data-mark='frosted'] .plate__icon {
+  filter: blur(0.7px) saturate(0.82) brightness(1.08);
+}
+
+.plate--seamless .plate__tile[data-mark='liquid'] .plate__icon {
+  filter: saturate(1.34) brightness(1.1);
+}
+
+/*
+ * A mark that has filled its tile *is* the tile, and that changes what its edges
+ * are for.
+ *
+ * The tile has an edge already — drawn once, by the tile — and a mark standing
+ * inside one needs an edge of its own so it does not sink into the plate it is on.
+ * A mark that has become the plate needs none: an outline hung around an icon at
+ * the tile's edge is a white line drawn just inside the tile's own, which is what
+ * a stretched icon used to look like and is not a material.
+ *
+ * What is left is the difference between the four materials here. A card is the
+ * thing a mark is laid on, so it stays behind the icon and shows through whatever
+ * the icon leaves open. The three glasses are sheets, and a sheet goes *over* the
+ * thing it glazes — the icon frosted, graded, or bent at the rim — which is why
+ * they are drawn on the pane at the tile's own size and the mark's pane carries
+ * nothing at all. See `LinkMark`.
+ */
+.plate--seamless .plate__tile[data-mark='solid'] .plate__mark-pane,
+.plate--seamless .plate__tile[data-mark='none'] .plate__mark-pane {
+  filter: none;
+  box-shadow: none;
+}
+
+.plate--seamless .plate__tile[data-mark='acrylic'] .plate__mark-pane,
+.plate--seamless .plate__tile[data-mark='frosted'] .plate__mark-pane,
+.plate--seamless .plate__tile[data-mark='liquid'] .plate__mark-pane {
+  background: none;
+  backdrop-filter: none;
+  filter: none;
+  box-shadow: none;
+}
+
+/* The icon is the one thing that does not scale with the opening: the mark keeps
+   its own size and its own place, which is what the size control says. */
+
+/* A folder under a filled tile is the exception: its cells are the four small
+   marks inside the tile, not the tile grown to fit one, so they keep their pane's
+   padding and let the material through to the photograph behind them. */
+.plate--seamless .plate__tile[data-mark]:not([data-mark='none']) .folder__cell,
+.plate--seamless .plate__tile[data-mark]:not([data-mark='none']) .folder__icon,
+.plate--seamless .plate__tile[data-mark]:not([data-mark='none']) .folder__initial {
+  padding: calc(var(--mark) * 0.15);
+}
+
+/*
+ * A ground the user picked brings its own ink.
+ *
+ * A card is the theme's to guarantee and a material is the board's, but a colour
+ * out of a picker is nobody's: the light theme's ink on a ground somebody made
+ * nearly black is unreadable, and no rule in this file could have known that in
+ * advance. So the plate weighs the colour it was given and says which way its
+ * ground leans, in `data-ground`, and the ink follows the ground rather than the
+ * theme. Nothing is written for a tile with no colour: there the theme's ink is
+ * already the right answer, and these rules stay out of its way.
+ *
+ * Only the two materials that really are their ground are asked — `solid`, which
+ * is entirely the colour, and `frosted`, which is most of it. Acrylic and a tile
+ * taken away are the wall seen through something, so their ink is the wall's and
+ * stays the wall's: a dark tint at 18% over a pale wallpaper is still a pale
+ * ground, and asking the colour there would put light words on light.
+ *
+ * The well and the mark's own edge come along because they stand on the same
+ * ground the words do — a folder's well is mixed from `--well`, and an icon's
+ * outline is drawn in ink, so a ground that flips the words and not the icon
+ * would have left one of the two behind.
+ */
+.plate__tile[data-ground='light'] {
+  --ink: var(--ink-on-light);
+  --ink-soft: var(--ink-on-light-soft);
+  --ink-faint: var(--ink-on-light-faint);
+  --well: color-mix(in srgb, var(--ink-on-light) 8%, transparent);
+  text-shadow: var(--ink-on-light-cast);
+}
+
+.plate__tile[data-ground='dark'] {
+  --ink: var(--ink-on-dark);
+  --ink-soft: var(--ink-on-dark-soft);
+  --ink-faint: var(--ink-on-dark-faint);
+  --well: color-mix(in srgb, var(--ink-on-dark) 10%, transparent);
+  text-shadow: var(--ink-on-dark-cast);
+}
+
+/* A plate whose tile has gone has nothing to hold a mark up, so the badge is
+   given a ring to stand in for the paper it no longer has. */
+.plate__tile[data-fill='none'] .plate__badge {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--on-wall) 22%, transparent);
+}
+
+/*
+ * The engine strip and the engine list are chrome that happens to hang inside a
+ * search bar, and they are drawn on a card of their own. They keep the card's
+ * ink whatever the bar around them is made of, which is what keeps a light
+ * theme's menus readable on a bar that has gone clear over a dark photograph.
+ */
+.plate__tile .strip,
+.plate__tile .engines {
+  --ink: var(--on-card);
+  --ink-soft: var(--on-card-soft);
+  --ink-faint: var(--on-card-faint);
+  --well: var(--on-card-well);
+}
+
+/* Someone who asked their system for more contrast asked for readable panels,
+   not for glass: the wall is included, because a diffused wallpaper is exactly
+   the sort of thing that puts words over nothing. */
+@media (prefers-contrast: more) {
+  .plate__tile[data-background='solid'],
+  .plate__tile[data-background='acrylic'],
+  .plate__tile[data-background='frosted'],
+  .plate__tile[data-background='liquid'] {
+    background-color: var(--mat-ground);
+    background-image: none;
+    backdrop-filter: none;
+    box-shadow:
+      inset 0 0 0 1px var(--card-rim),
+      var(--shadow-1);
+    --ink: var(--on-card);
+    --ink-soft: var(--on-card-soft);
+    --ink-faint: var(--on-card-faint);
+    --well: var(--on-card-well);
+    text-shadow: none;
+  }
+
+  /* And a mark's pane, which is glass the reader has asked to be taken out of
+     the picture: the card it stands on, at full strength. */
+  .plate__tile[data-mark='acrylic'] .plate__mark-pane,
+  .plate__tile[data-mark='acrylic'] .plate__initial,
+  .plate__tile[data-mark='acrylic'] .widget-glyph,
+  .plate__tile[data-mark='acrylic'] .folder__cell,
+  .plate__tile[data-mark='acrylic'] .plate__pane,
+  .plate__tile[data-mark='frosted'] .plate__mark-pane,
+  .plate__tile[data-mark='frosted'] .plate__initial,
+  .plate__tile[data-mark='frosted'] .widget-glyph,
+  .plate__tile[data-mark='frosted'] .folder__cell,
+  .plate__tile[data-mark='frosted'] .plate__pane,
+  .plate__tile[data-mark='liquid'] .plate__mark-pane,
+  .plate__tile[data-mark='liquid'] .plate__initial,
+  .plate__tile[data-mark='liquid'] .widget-glyph,
+  .plate__tile[data-mark='liquid'] .folder__cell,
+  .plate__tile[data-mark='liquid'] .plate__pane {
+    background: var(--card) !important;
+    background-image: none;
+    backdrop-filter: none;
+    box-shadow:
+      inset 0 0 0 1px var(--card-rim),
+      var(--shadow-1);
+  }
+
+  .surface__wall {
+    --wall-layers: none, none;
+    --wall-tone: saturate(1);
+    --wall-diffuse: 0px;
+    filter: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Folders                                                             */
+/* ------------------------------------------------------------------ */
+
+/* What a folder holds, drawn as the marks of its contents. Four fit legibly at
+   the size a folder opens at; a folder given more room still shows four, and
+   says how many more there are. */
+.folder {
+  position: relative;
+  width: 78cqmin;
+  height: 78cqmin;
+  display: grid;
+  place-items: center;
+}
+
+.folder__grid {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 7%;
+  place-items: center;
+}
+
+.folder[data-count='1'] .folder__grid {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.folder__cell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: calc(var(--radius) * 0.34);
+  background: var(--well);
+  /* Each cell is its own container, so a letter inside one is sized against
+     the cell it is in rather than the whole folder. */
+  container-type: size;
+}
+
+.folder__icon {
+  width: 74%;
+  height: 74%;
+  border-radius: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.folder__initial {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 52cqmin;
+  line-height: 1;
+  color: var(--ink-soft);
+}
+
+.folder__more {
+  position: absolute;
+  right: -6%;
+  bottom: -6%;
+  z-index: 2;
+  min-width: 1.4em;
+  padding: 0 0.32em;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: var(--shadow-1);
+}
+
+/* The four materials are given to the folder in the same list as every other mark
+   (see the material block above), because the cells and the cover are both marks.
+   What is set here is only what a cover adds to that: the corners its own box has
+   — a little less than the tile's, since the folder is a little smaller than the
+   tile — and the way it fills its pane. */
+.folder--cover {
+  border-radius: calc(var(--radius) * 0.78);
+}
+
+.folder__cover {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  pointer-events: none;
+}
+
+/* What the cover holds, said in its corner rather than over it: with a cover on,
+   the count is the only thing left that says the folder has anything in it. */
+.folder__count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-1);
+}
+
+/* A folder the pointer is carrying something over: the drop would file it. */
+.plate--drop-into .plate__tile {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    var(--shadow-2);
+}
+
+/* The band drawn across the canvas to gather plates. */
+.band {
+  position: absolute;
+  z-index: 4;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  pointer-events: none;
+}
+
+/* A move of a selection that has nowhere to land: the openings are shown
+   without the accent, because they are the openings it cannot have. The look
+   itself is set beside `.drop-target`, at the top of the file. */
+
+/* ------------------------------------------------------------------ */
+/* Search plate                                                        */
+/* ------------------------------------------------------------------ */
+
+.plate--search {
+  /* The engine list hangs out of the bar, so the plate has to be allowed to
+     spill and has to sit above its neighbours while it does. */
+  z-index: 6;
+}
+
+.plate--search .plate__tile {
+  overflow: visible;
+}
+
+/* A bar is moved by what is left of it once the field has taken its share: the
+   mark at the left, the button at the right, and the few pixels of card around
+   them. The field keeps the cursor that says it is a field. */
+.plate--search .plate__tile,
+.plate--search .search__medal,
+.plate--search .strip__mark {
+  cursor: grab;
+}
+
+.plate--search.plate--dragging .plate__tile,
+.plate--search.plate--dragging .search__medal,
+.plate--search.plate--dragging .strip__mark {
+  cursor: grabbing;
+}
+
+/* And a bar whose plate is switched off is still a bar you can take hold of, so
+   it is shown what it is on hover rather than left as words on a photograph. The
+   ground is named here as well as cleared: a bar draws its own card, and a rule
+   that only promised a radius would leave that card standing over the answer the
+   user gave. */
+/*
+ * A search bar is rounded by a length of its own rather than by the tile's share.
+ *
+ * A tile is round because it is square: a share of the shorter side is a corner, and
+ * at the top of the range it is the tile's own shape. A bar is thirty times wider
+ * than it is tall, so the same share is an ellipse — a lens with points at both ends
+ * and no straight edge left — which is what a coloured bar used to be drawn as while
+ * a transparent one kept the chrome's twenty pixels. One corner, asked for in the
+ * unit a corner is actually measured in.
+ */
+.plate--search .plate__tile {
+  border-radius: var(--bar-radius, var(--radius));
+}
+
+.plate--search .plate__tile[data-fill='none'] {
+  background: transparent;
+  border-radius: var(--bar-radius, var(--radius));
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: background calc(160ms * var(--motion)) var(--ease), box-shadow calc(160ms * var(--motion)) var(--ease);
+}
+
+/* And a bar standing on a colour of its own, for the same reason. */
+.plate--search .plate__tile[data-fill='custom'] {
+  background: var(--background-fill, var(--tile-fill, var(--card)));
+}
+
+.plate--search:hover .plate__tile[data-fill='none'] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--on-wall) 24%, transparent);
+}
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  /* The field's own ground. A bar is a card with a field inside it, and the
+     field is a thing of its own: it can be tinted, cleared, or given a colour,
+     separately from whether the bar around it is drawn at all. Its corner is the
+     bar's, a little way in, so that the two roundings cannot disagree. */
+  border-radius: max(0px, calc(var(--bar-radius, var(--radius)) - 5px));
+}
+
+.search[data-field-fill='auto'] {
+  background: color-mix(in srgb, var(--well) 72%, transparent);
+}
+
+.search[data-field-fill='none'] {
+  background: none;
+}
+
+.search[data-field-fill='custom'] {
+  background: var(--field-fill, var(--well));
+}
+
+/* The engine's mark, at the left where it reads as the thing being searched
+   with rather than as a button appended to a field. */
+.search__medal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: clamp(26px, calc(var(--tile) * 0.5), 38px);
+  height: clamp(26px, calc(var(--tile) * 0.5), 38px);
+  border-radius: 50%;
+  color: var(--engine-brand, var(--ink-soft));
+  background: color-mix(in srgb, currentColor 11%, transparent);
+  transition: background calc(140ms * var(--motion)) var(--ease);
+}
+
+.search__medal--button:hover {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.search__mark {
+  width: 62%;
+  height: 62%;
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: clamp(14px, calc(var(--tile) * 0.22), 18px);
+  font-weight: 450;
+  color: var(--ink);
+}
+
+.search__input::placeholder {
+  color: var(--ink-faint);
+}
+
+.search__go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: clamp(28px, calc(var(--tile) * 0.46), 38px);
+  height: clamp(28px, calc(var(--tile) * 0.46), 38px);
+  border-radius: 50%;
+  color: var(--ink-soft);
+  transition: color calc(140ms * var(--motion)) var(--ease), background calc(140ms * var(--motion)) var(--ease);
+}
+
+.search__go:hover {
+  color: var(--ink);
+  background: var(--well);
+}
+
+.search__go svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* The other way to change engines: every one of them on the frame, above the
+   field, where switching costs one press instead of two. */
+.search--strip {
+  gap: 6px;
+}
+
+.strip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 5px);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 99px;
+  background: var(--card);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--card-rim);
+}
+
+/*
+ * The strip's marks are the size the user asked for, in pixels rather than in
+ * fractions, because this is a row of buttons above the bar and not a mark
+ * standing on a tile: a 24px engine logo is legible or it is not, whatever the
+ * grid happens to be doing that day.
+ */
+.strip__mark {
+  display: grid;
+  place-items: center;
+  width: var(--engine-mark, 34px);
+  height: var(--engine-mark, 34px);
+  border-radius: 50%;
+  color: var(--engine-brand, var(--ink-soft));
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  transition: background calc(140ms * var(--motion)) var(--ease), transform calc(140ms * var(--motion)) var(--ease);
+}
+
+.strip__mark:hover {
+  background: color-mix(in srgb, currentColor 26%, transparent);
+  transform: translateY(-1px);
+}
+
+.strip__mark--on {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+/* The engines, offered where the current one is shown. */
+.engines {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 196px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: calc(var(--radius) * 0.72);
+  background: var(--card);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--card-rim);
+  animation: pop-in calc(140ms * var(--motion)) var(--ease) both;
+}
+
+.engines__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink-soft);
+}
+
+.engines__row:hover {
+  background: var(--well);
+  color: var(--ink);
+}
+
+.engines__row--on {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.engines__medal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--engine-brand, var(--ink-soft));
+  background: color-mix(in srgb, currentColor 11%, transparent);
+}
+
+.engines__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rail                                                                */
+/* ------------------------------------------------------------------ */
+
+.rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 clamp(2px, 0.4vw, 8px);
+}
+
+/*
+ * Standing on a side edge, the rail turns on its end.
+ *
+ * The tags keep their own shape and their own text — a chip is a chip wherever it
+ * is hung — and only the direction they stack in changes. What cannot come along
+ * is the line of keyboard hints: it is a sentence, and a sentence in a column
+ * thirty pixels wide is either cut in half or forces the column wide enough to be
+ * a wall. It is not hidden information, it is the same line the drawer prints.
+ */
+.rail[data-orientation='column'] {
+  flex-direction: column;
+  min-height: 0;
+  padding: clamp(2px, 0.4vh, 8px) 0;
+}
+
+.rail[data-orientation='column'] .rail__spacer,
+.rail[data-orientation='column'] .rail__note {
+  display: none;
+}
+
+.rail__tag {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--on-wall-soft);
+  background: var(--on-wall-chip);
+  transition: color calc(140ms * var(--motion)) var(--ease), background calc(140ms * var(--motion)) var(--ease);
+}
+
+.rail__tag:hover {
+  color: var(--on-wall);
+  background: var(--on-wall-chip-hover);
+}
+
+.rail__tag--current {
+  color: var(--on-wall);
+  box-shadow: inset 0 0 0 1px var(--on-wall-rim);
+}
+
+.rail__chip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--tag-tint);
+}
+
+.rail__add {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--on-wall-soft);
+  background: var(--on-wall-chip);
+  transition: color calc(140ms * var(--motion)) var(--ease), background calc(140ms * var(--motion)) var(--ease);
+}
+
+.rail__add:hover {
+  color: var(--on-wall);
+  background: var(--on-wall-chip-hover);
+}
+
+.rail__spacer {
+  flex: 1;
+}
+
+.rail__note {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--on-wall-soft);
+  text-shadow: var(--label-shadow);
+}
+
+/* ------------------------------------------------------------------ */
+/* Chrome that floats over the canvas                                  */
+/* ------------------------------------------------------------------ */
+
+.chrome {
+  position: absolute;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chrome--top {
+  top: clamp(10px, 1.5vh, 20px);
+  right: clamp(10px, 1.5vw, 22px);
+}
+
+.chrome--bottom {
+  bottom: clamp(56px, 7vh, 84px);
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-wall);
+  background: var(--on-wall-chip);
+  box-shadow: inset 0 0 0 1px var(--on-wall-rim);
+  transition: background calc(140ms * var(--motion)) var(--ease);
+  backdrop-filter: blur(8px);
+}
+
+.chip:hover {
+  background: var(--on-wall-chip-hover);
+}
+
+.chip--accent {
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.chip--on {
+  box-shadow: inset 0 0 0 2px var(--on-wall);
+}
+
+/* ------------------------------------------------------------------ */
+/* Selection summary                                                   */
+/* ------------------------------------------------------------------ */
+
+.marks {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(52px, 7vh, 84px);
+  transform: translateX(-50%);
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--panel-rim);
+  font-size: 13px;
+}
+
+.marks__count {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Empty bay                                                           */
+/* ------------------------------------------------------------------ */
+
+.empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+  width: max-content;
+}
+
+.empty__title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--on-wall);
+  text-shadow: var(--label-shadow);
+}
+
+.empty__body {
+  font-size: 13.5px;
+  color: var(--on-wall-soft);
+  max-width: 32ch;
+  text-shadow: var(--label-shadow);
+}
+
+.empty__cta {
+  margin-top: 6px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Panels: the drawer and the popovers                                 */
+/* ------------------------------------------------------------------ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--scrim);
+  animation: fade-in calc(160ms * var(--motion)) ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  animation: drawer-in calc(220ms * var(--motion)) var(--ease);
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(20px);
+    opacity: 0.4;
+  }
+}
+
+.drawer__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--panel-rim);
+}
+
+.drawer__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.drawer__body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.section__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 12px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.field-row__label {
+  flex: 1;
+  font-size: 13.5px;
+  min-width: 0;
+}
+
+.field-row__value {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--ink-soft);
+  min-width: 32px;
+  text-align: right;
+}
+
+.field-row__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin: 8px 0 0;
+}
+
+select.input,
+input.input,
+textarea.input {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--card-rim);
+  background: var(--card-soft);
+  color: var(--ink);
+  font-size: 13px;
+  min-width: 0;
+}
+
+textarea.input {
+  height: auto;
+  padding: 7px 10px;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+input.input--wide,
+textarea.input--wide {
+  flex: 1;
+}
+
+input[type='range'] {
+  flex: 0 0 140px;
+  accent-color: var(--accent);
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--card-soft);
+  box-shadow: inset 0 0 0 1px var(--card-rim);
+  transition: background calc(140ms * var(--motion)) var(--ease);
+}
+
+.button:hover {
+  background: color-mix(in srgb, var(--ink) 8%, var(--card-soft));
+}
+
+.button[disabled] {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.button[disabled]:hover {
+  background: var(--card-soft);
+}
+
+.button--primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.button--primary:hover {
+  background: color-mix(in srgb, #000 10%, var(--accent));
+}
+
+.button--danger {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.wallpaper-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wallpaper-card {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  overflow: hidden;
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px var(--card-rim);
+  transition: box-shadow calc(140ms * var(--motion)) var(--ease);
+}
+
+/*
+ * A swatch names itself in whichever ink survives it. The pale presets exist
+ * precisely so the page can be near-white, which is exactly where a white
+ * label disappears.
+ */
+.wallpaper-card__name {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink);
+  text-shadow: none;
+}
+
+.wallpaper-card--dark .wallpaper-card__name {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.wallpaper-card--on {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.wallpaper-card--none {
+  background-image: linear-gradient(135deg, rgba(0, 0, 0, 0.06) 25%, transparent 25%, transparent 50%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.06) 75%, transparent 75%);
+  background-size: 12px 12px;
+}
+
+/*
+ * A card on the shelf is a picture with two things on it: the whole card is the way
+ * to choose it, and the corner is the way to be rid of it. Both are buttons, and
+ * the one underneath covers the card, so a press anywhere that is not the × hangs
+ * the wallpaper — which is what a shelf of pictures is for.
+ */
+.wallpaper-card__pick {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wallpaper-card__drop {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  box-shadow: inset 0 0 0 1px var(--panel-rim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity calc(140ms * var(--motion)) var(--ease);
+}
+
+.wallpaper-card:hover .wallpaper-card__drop,
+.wallpaper-card__drop:focus-visible {
+  opacity: 1;
+}
+
+/* A picture is assumed to be darker than the drawer rather than lighter: a name
+   over a photograph that has to be read needs an edge, and white with a shadow is
+   the one that keeps reading over the pale ones too. */
+.wallpaper-card--shot .wallpaper-card__name {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* ------------------------------------------------------------------ */
+/* Popovers                                                            */
+/* ------------------------------------------------------------------ */
+
+.popover {
+  position: fixed;
+  z-index: 90;
+  min-width: 220px;
+  padding: 8px;
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--panel-rim);
+  animation: pop-in calc(150ms * var(--motion)) var(--ease);
+  max-height: min(72vh, 560px);
+  overflow: auto;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.985);
+  }
+}
+
+.popover__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 10px;
+  border-bottom: 1px solid var(--panel-rim);
+  margin-bottom: 7px;
+}
+
+.popover__title {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover__kind {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  text-align: left;
+  transition: background calc(120ms * var(--motion)) var(--ease);
+}
+
+.menu-item:hover {
+  background: var(--well);
+}
+
+.menu-item--danger {
+  color: var(--accent);
+}
+
+.menu-label {
+  padding: 11px 10px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.span-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.span-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px 6px;
+  border-radius: 8px;
+  background: var(--card-soft);
+  box-shadow: inset 0 0 0 1px var(--card-rim);
+}
+
+.span-choice:hover {
+  background: color-mix(in srgb, var(--ink) 7%, var(--card-soft));
+}
+
+.span-choice--on {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.span-choice__name {
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+
+.span-choice__chip {
+  border-radius: 3px;
+  background: var(--ink-faint);
+}
+
+.swatches {
+  display: flex;
+  gap: 8px;
+  padding: 0 10px 6px;
+}
+
+/*
+ * A shelf of things in the drawer: the wallpapers the user brought, and the
+ * pictures on a tile. Chips rather than cards, because a shelf is a list of names
+ * to pick from and the picture itself is already on the wall behind the drawer.
+ */
+.shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.shelf__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.shelf__item .button {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One moment of the day and what it starts: a time, a name, and a way off. */
+.rotation__moment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.rotation__moment .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * The engines the bar can search, as rows in the drawer.
+ *
+ * A name and an address per row, both editable where they are listed: an engine the
+ * user added is theirs, and one that can only be added and not corrected is a row
+ * that has to be deleted and typed again. An address with no `%s` in it is marked
+ * rather than refused — it is a search that will not carry the words anywhere, which
+ * is worth seeing before saving rather than after searching.
+ */
+.engines-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.engines-edit__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.engines-edit__row .input {
+  flex: none;
+  width: 110px;
+  min-width: 0;
+}
+
+.engines-edit__row .input--wide {
+  flex: 1;
+  width: auto;
+}
+
+.engines-edit__row .input[data-warn='on'] {
+  box-shadow: inset 0 0 0 1px var(--danger, #e5484d);
+}
+
+.engines-edit__row .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/*
+ * The wallpaper switch: one button and nothing on it.
+ *
+ * A tile whose whole content is one press is a tile that looks like a tile: the mark
+ * is the same glyph the widget is listed under in the menu, and the plate's own
+ * ground, ink and material are what it is drawn in. It takes the tile's corners, so a
+ * round tile holds a round button.
+ */
+.wallpaper-switch {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  border-radius: inherit;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wallpaper-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.wallpaper-switch:not(:disabled):hover {
+  color: var(--ink);
+}
+
+.wallpaper-switch .widget-glyph {
+  width: round(var(--mark, 40px), 1px);
+  height: round(var(--mark, 40px), 1px);
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--card-rim);
+}
+
+.swatch--on {
+  box-shadow: inset 0 0 0 2px var(--panel), 0 0 0 2px var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Dev-only origin marker                                              */
+/* ------------------------------------------------------------------ */
+
+.dev-badge {
+  position: fixed;
+  left: 12px;
+  top: 10px;
+  z-index: 50;
+  font-family: var(--font-data);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--on-wall-soft);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* A page given over to a view                                         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The reading view takes the whole stage: no canvas, no grid, nothing to
+ * arrange. It keeps the rail underneath, because the rail is how you leave.
+ */
+.board-view {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.board-view > .view {
+  flex: 1;
+  min-height: 0;
+}
+
+.view--embedded {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: calc(var(--wall-margin) * 1.6) 4px 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Stacks                                                              */
+/* ------------------------------------------------------------------ */
+
+.stack__rows {
+  max-height: 46vh;
+  overflow: auto;
+  padding: 2px 6px;
+}
+
+.stack__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stack__open {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack__open:hover {
+  background: var(--well);
+  color: var(--ink);
+}
+
+.stack__drop {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-faint);
+}
+
+.stack__drop:hover {
+  color: var(--danger, #e5484d);
+  background: var(--well);
+}
+
+.popover__note {
+  margin: 6px 12px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.popover__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 10px 10px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Bits the drawer and the rail borrowed                               */
+/* ------------------------------------------------------------------ */
+
+.section__note {
+  margin: 2px 0 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.field-row--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+/* A label that carries the tick itself, so the whole line is the hit area. */
+.field-row__label--check {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.colour-input {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  padding: 2px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--well);
+  cursor: pointer;
+}
+
+/* A row that puts its control under its label: the label is a caption rather
+   than a column heading, and the field gets the whole width of the drawer. */
+.field-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.field-row--stack .field-row__label {
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* The performance stops                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Three notches, drawn as a track.
+ *
+ * It is a slider in the sense that matters — there is an order and a distance
+ * along it, and the thing moves when you choose — but the stops are named, so
+ * the labels are under the track rather than at its ends. What lights up is
+ * every notch up to the one chosen, which is what makes the setting readable at
+ * a glance: two notches of light out of three is the middle setting without
+ * reading a word.
+ *
+ * The pip you chose stands taller than the others, and both that and the sweep
+ * of the fill are scaled by `--motion`, so a reader whose system asked for
+ * stillness gets the same three notches and no travel.
+ */
+.stops {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.stops__stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 6px 5px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color calc(160ms * var(--motion, 1)) var(--ease);
+}
+
+.stops__stop:hover,
+.stops__stop--on {
+  color: var(--ink);
+}
+
+.stops__pip {
+  display: block;
+  width: 32px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--card-rim);
+  overflow: hidden;
+  transition:
+    height calc(180ms * var(--motion, 1)) var(--ease),
+    box-shadow calc(180ms * var(--motion, 1)) var(--ease);
+}
+
+.stops__stop--on .stops__pip {
+  height: 8px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.stops__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform calc(220ms * var(--motion, 1)) var(--ease);
+}
+
+/* ------------------------------------------------------------------ */
+/* The icon bay                                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * What the board found, laid out to be looked at.
+ *
+ * Five to a row at the width a popover gives a menu, each in the cell it would
+ * occupy on the board. The grid is deliberately larger than a single row: the
+ * services answer with different pictures of different sizes, and the point of
+ * showing them is that one of them is the good one.
+ */
+.icon-bay {
+  display: grid;
+  gap: 9px;
+  padding: 2px 10px 10px;
+}
+
+.icon-bay__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 6px;
+}
+
+.icon-bay__cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 5px;
+  border: 1px solid var(--card-rim);
+  border-radius: 9px;
+  background: var(--card-soft);
+  cursor: pointer;
+  transition:
+    border-color calc(160ms * var(--motion, 1)) var(--ease),
+    box-shadow calc(160ms * var(--motion, 1)) var(--ease);
+}
+
+.icon-bay__cell:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--card-rim));
+}
+
+.icon-bay__cell--on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.icon-bay__cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The key field is a button that records the next key pressed into it. */
+.input--key {
+  min-width: 96px;
+  text-align: center;
+  font-family: var(--font-data);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.marks__hint {
+  color: color-mix(in srgb, var(--panel) 62%, transparent);
+  font-size: 12px;
+}
+
+.rail__tag--view {
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ */
+/* A folder, open                                                      */
+/* ------------------------------------------------------------------ */
+
+/* A sheet across the middle of the wall, not a menu beside the tile: the board
+   stays where it was behind it, stepped back, so the folder reads as somewhere
+   you went rather than something that interrupted. Translucent, so the wall it
+   was opened over is still the thing it is sitting on. */
+.folder-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+}
+
+.folder-sheet__veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--surface) 42%, transparent);
+  backdrop-filter: blur(7px) saturate(0.9);
+  animation: sheet-veil calc(160ms * var(--motion)) var(--ease);
+}
+
+@keyframes sheet-veil {
+  from {
+    opacity: 0;
+  }
+}
+
+.folder-sheet__body {
+  position: relative;
+  width: min(880px, calc(100vw - 88px));
+  max-height: min(76vh, 560px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 16px;
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop), inset 0 0 0 1px var(--panel-rim);
+  backdrop-filter: blur(22px) saturate(1.2);
+  animation: sheet-in calc(200ms * var(--motion)) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.folder-sheet__head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-rim);
+}
+
+.folder-sheet__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.folder-sheet__count {
+  flex: 1;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.folder-sheet__close {
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.folder-sheet__close:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.folder-sheet__empty {
+  margin: 18px 2px;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+/* What the folder holds, drawn the way the folder draws it: the mark first,
+   the name under it. Left-aligned and wrapping, because the sheet is wider
+   than the contents and empty space at the end is honest. */
+.folder-sheet__grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 12px 0 14px;
+  list-style: none;
+  overflow: auto;
+}
+
+.folder-item {
+  position: relative;
+  width: 104px;
+}
+
+.folder-item__open {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 10px 6px 9px;
+  border: 0;
+  border-radius: 18px;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  cursor: pointer;
+  transition: background calc(140ms * var(--motion)) var(--ease);
+}
+
+.folder-item__open:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.folder-item__mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  container-type: size;
+}
+
+.folder-item__name {
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-item__drop {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: inset 0 0 0 1px var(--panel-rim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity calc(140ms * var(--motion)) var(--ease);
+}
+
+.folder-item:hover .folder-item__drop,
+.folder-item__drop:focus-visible {
+  opacity: 1;
+}
+
+/* The corner a page's own primary button sits in. */
+.folder-sheet__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-rim);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

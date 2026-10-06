@@ -1,0 +1,22 @@
+node_modules
+dist
+.vite
+*.local
+.DS_Store
+web-ext-artifacts
+.impeccable
+.probe-profile
+.probe-shot.png
+
+# Probe leftovers: the driven page, a magnified crop, and the walk's own report.
+.probe-*
+
+
+# A throwaway profile for driving the real browser
+.zen-profile
+
+# The assistant's own index of this project, which is rebuilt from the source
+.codegraph
+
+# TypeScript's build cache
+*.tsbuildinfo

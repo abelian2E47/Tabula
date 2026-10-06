@@ -1,0 +1,232 @@
+/*
+ * The standalone views.
+ *
+ * A reading surface, not a board: one column, one filter, grouped rows. It
+ * borrows the board's tokens so it looks like the same product, and none of
+ * its furniture — no grid, no draggable anything, no wallpaper behind it.
+ */
+
+body.collection {
+  overflow: auto;
+  background: var(--surface);
+}
+
+.view {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Head                                                                */
+/* ------------------------------------------------------------------ */
+
+.view__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.view__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.view__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px 6px 8px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--well);
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.view__back svg {
+  width: 15px;
+  height: 15px;
+}
+
+.view__back:hover {
+  color: var(--ink);
+  background: var(--card-soft);
+}
+
+/* ------------------------------------------------------------------ */
+/* Filter                                                              */
+/* ------------------------------------------------------------------ */
+
+.view__filter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--card-rim);
+  background: var(--card);
+  box-shadow: var(--shadow-1);
+}
+
+.view__glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.view__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  outline: none;
+  font-size: 14px;
+}
+
+.view__input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* The webkit search affordance duplicates the Escape key and reads as noise. */
+.view__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.view__slash {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--card-rim);
+  background: var(--well);
+  color: var(--ink-faint);
+  font-family: var(--font-data);
+  font-size: 11px;
+}
+
+.view__count {
+  margin: 14px 2px 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.view__quiet {
+  margin: 48px 2px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Groups and rows                                                     */
+/* ------------------------------------------------------------------ */
+
+.group {
+  margin-top: 18px;
+}
+
+.group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.group__head span {
+  font-family: var(--font-data);
+  font-size: 11px;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+.group__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  text-align: left;
+  transition: background 0.12s var(--ease);
+}
+
+.row:hover {
+  background: var(--card-soft);
+}
+
+.row__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--card-rim);
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row__host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.row__host em {
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.row__trailing {
+  flex: none;
+  color: var(--ink-faint);
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .view {
+    padding: 28px 14px 72px;
+  }
+
+  .row__host {
+    display: none;
+  }
+}

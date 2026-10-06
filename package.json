@@ -1,0 +1,25 @@
+{
+  "name": "tabula",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tabula — a self-arranged new tab board for Firefox / Zen.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5181",
+    "typecheck": "tsc -b --force"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0"
+  }
+}

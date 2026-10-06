@@ -1,0 +1,9 @@
+# Text is stored as it is written — LF — and checked out as LF on every platform.
+# The board is one codebase read on Windows and packaged for Firefox, and a file that
+# changes its line endings on the way through Git is a diff nobody can read.
+* text=auto eol=lf
+
+# The packed extension is bytes, not text: Git must not touch it.
+*.zip binary
+*.png binary
+*.woff2 binary
