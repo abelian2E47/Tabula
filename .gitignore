@@ -20,3 +20,9 @@ web-ext-artifacts
 
 # TypeScript's build cache
 *.tsbuildinfo
+
+# Notes about the project rather than the plugin: what it is for, how it should feel.
+# Kept on disk, not in the repository.
+PRODUCT.md
+docs/
+
